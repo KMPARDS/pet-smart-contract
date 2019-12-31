@@ -96,6 +96,8 @@ describe('TimeAllyPET Contract', () => {
       );
       timeallyPETInstance =  await TimeAllyPETContractFactory.deploy(esInstance.address);
 
+      console.log('Balance of PET contract:', ethers.utils.formatEther(await esInstance.functions.balanceOf(timeallyPETInstance.address)), 'ES');
+
       assert.ok(timeallyPETInstance.address, 'conract address should be present');
     });
 
@@ -126,6 +128,8 @@ describe('TimeAllyPET Contract', () => {
       );
 
       const balanceOf1 = await esInstance.functions.balanceOf(accounts[1]);
+
+      console.log('Balance of PET contract:', ethers.utils.formatEther(await esInstance.functions.balanceOf(timeallyPETInstance.address)), 'ES');
 
       assert.ok(balanceOf1.eq(ethers.utils.parseEther(account1Balance)), `account 1 should get ${account1Balance} ES`);
     });
@@ -171,6 +175,8 @@ describe('TimeAllyPET Contract', () => {
       const balanceAfter = await esInstance.functions.balanceOf(accounts[0]);
       const fundsDepositAfter = await timeallyPETInstance.functions.fundsDeposit();
 
+      console.log('Balance of PET contract:', ethers.utils.formatEther(await esInstance.functions.balanceOf(timeallyPETInstance.address)), 'ES');
+
       assert.ok(
         fundsDepositAfter.sub(fundsDepositBefore).eq(depositAmount),
         'increase in fundsDeposit should be deposit amount'
@@ -198,6 +204,8 @@ describe('TimeAllyPET Contract', () => {
       const pet = await timeallyPETInstance.functions.pets(accounts[1], 0);
 
       console.log(pet);
+
+      console.log('Balance of PET contract:', ethers.utils.formatEther(await esInstance.functions.balanceOf(timeallyPETInstance.address)), 'ES');
 
       /// @dev then comparing with expectation value
       assert.ok(
@@ -246,7 +254,9 @@ describe('TimeAllyPET Contract', () => {
 
               const pet = await timeallyPETInstance.functions.pets(accounts[1], 0);
 
-              console.log('Addition to pending Benefits (annuitity and power booster):', ethers.utils.formatEther(allocatedFundsAfter.sub(allocatedFundsBefore)));
+              console.log('Balance of PET contract:', ethers.utils.formatEther(await esInstance.functions.balanceOf(timeallyPETInstance.address)), 'ES');
+
+              console.log('Allocation of funds from fundsDeposit (annuitity and power booster):', ethers.utils.formatEther(allocatedFundsAfter.sub(allocatedFundsBefore)));
 
               for(let i = 0; i <= 13; i++) {
                 console.log(i, ethers.utils.formatEther(await timeallyPETInstance.functions.getMonthlyDepositedAmount(accounts[1],0,i)));
@@ -316,6 +326,7 @@ describe('TimeAllyPET Contract', () => {
 
               console.log(`AN ${annuityMonthId}/${annuityMonthId}) Received:`, ethers.utils.formatEther(balanceAfter.sub(balanceBefore)));
 
+              console.log('Balance of PET contract:', ethers.utils.formatEther(await esInstance.functions.balanceOf(timeallyPETInstance.address)), 'ES');
             });
           });
 
@@ -339,6 +350,8 @@ describe('TimeAllyPET Contract', () => {
                   console.log(`PB ${nextPowerBoosterWithdrawlMonthId}/${annuityMonthId}) Received:`, ethers.utils.formatEther(balanceAfter.sub(balanceBefore)));
 
                   nextPowerBoosterWithdrawlMonthId++;
+
+                  console.log('Balance of PET contract:', ethers.utils.formatEther(await esInstance.functions.balanceOf(timeallyPETInstance.address)), 'ES');
                 } catch(error) {
                   // console.log(error.message, error.message.includes('target not achieved'));
                   if(error.message.includes('target not achieved')) {

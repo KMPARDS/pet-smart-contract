@@ -30,21 +30,22 @@ const PETPlans = [
   {minimumMonthlyCommitmentAmount: '10000', monthlyBenefitFactorPerThousand: '120'}
 ];
 
-const fundsDeposit = '20000';
-const petPlanId = 0;
+const account1Balance = '80000';
+const fundsDeposit = '2000000';
+const petPlanId = 2;
 const depositCases = [
+  ['2000'],
+  ['2800'],
+  ['4000'],
+  ['1000'],
+  [],
   ['500'],
-  ['300'],
-  ['500'],
-  ['500'],
-  ['500'],
-  ['500'],
-  ['500'],
-  ['500'],
-  ['500'],
-  ['500'],
-  ['500'],
-  ['500']
+  ['2500'],
+  ['2500'],
+  ['50000'],
+  [],
+  ['2500'],
+  ['1000','500','2000']
 ];
 
 let nextPowerBoosterWithdrawlMonthId = 1;
@@ -118,15 +119,15 @@ describe('TimeAllyPET Contract', () => {
       );
     });
 
-    it('deployer sends 10,000 ES to account 1', async() => {
+    it(`deployer sends ${account1Balance} ES to account 1`, async() => {
       await esInstance.functions.transfer(
         accounts[1],
-        ethers.utils.parseEther('10000')
+        ethers.utils.parseEther(account1Balance)
       );
 
       const balanceOf1 = await esInstance.functions.balanceOf(accounts[1]);
 
-      assert.ok(balanceOf1.eq(ethers.utils.parseEther('10000')), 'account 1 should get 10,000 ES');
+      assert.ok(balanceOf1.eq(ethers.utils.parseEther(account1Balance)), `account 1 should get ${account1Balance} ES`);
     });
 
     PETPlans.forEach((plan, index) => {

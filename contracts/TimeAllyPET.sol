@@ -147,7 +147,7 @@ contract TimeAllyPET {
     uint256 _benefitAllocation = _amount;
 
     // if amount more than commitment, consider the deposit amount as double
-    if(_amount >= _petPlan.minimumMonthlyCommitmentAmount) {
+    if(_amount >= _petPlan.minimumMonthlyCommitmentAmount.div(2)) {
       _benefitAllocation = _benefitAllocation.mul(2);
     }
 
@@ -237,7 +237,7 @@ contract TimeAllyPET {
       uint256 _modulo = _i%12;
       uint256 _depositDoneForThis = _pet.monthlyDepositAmount[_modulo==0?12:_modulo];
 
-      if(_depositDoneForThis >= _petPlan.minimumMonthlyCommitmentAmount) {
+      if(_depositDoneForThis >= _petPlan.minimumMonthlyCommitmentAmount.div(2)) {
         _depositDoneForThis = _depositDoneForThis.mul(2);
       }
 
@@ -347,7 +347,7 @@ contract TimeAllyPET {
     for(uint256 _i = 1; _i <= 12; _i++) {
       uint256 _depositDoneForThis = _pet.monthlyDepositAmount[_i];
 
-      if(_depositDoneForThis >= _petPlan.minimumMonthlyCommitmentAmount) {
+      if(_depositDoneForThis >= _petPlan.minimumMonthlyCommitmentAmount.div(2)) {
         _depositDoneForThis = _depositDoneForThis.mul(2);
       }
 

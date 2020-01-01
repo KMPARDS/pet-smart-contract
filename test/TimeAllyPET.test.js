@@ -15,9 +15,12 @@ const provider = new ethers.providers.Web3Provider(ganache.provider({ gasLimit: 
 /// @dev importing build file
 const esJson = require('../build/Eraswap_ERC20Basic.json');
 const timeallyPETJSON = require('../build/TimeAllyPET_TimeAllyPET.json');
+const fundsBucketPETJSON = require('../build/TimeAllyPET_FundsBucketPET.json');
 
 /// @dev initialize global variables
-let accounts, esInstance, timeallyPETInstance;
+let accounts, esInstance, timeallyPETInstance, fundsBucketPETInstance;
+const addressLabel = {};
+addressLabel[ethers.constants.AddressZero] = 'ZERO_ADD';
 
 const increaseSeconds = 2629744;
 let evm_increasedTime = 2;
@@ -50,6 +53,19 @@ const depositCases = [
 
 let nextPowerBoosterWithdrawlMonthId = 1;
 
+const TRANSFER_SIG = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+async function parseERC20TransfersFromTx(tx) {
+  const r = await (await tx).wait();
+  const gasUsed = r.gasUsed.toNumber();
+  console.log('\x1b[2m',`Gas used: ${gasUsed} / ${ethers.utils.formatEther(r.gasUsed.mul(ethers.utils.parseUnits('1','gwei')))} ETH / ${gasUsed / 50000} ERC20 transfers`);
+  r.logs.filter(log => log.topics[0] === TRANSFER_SIG).forEach(log => {
+    const from = ethers.utils.hexZeroPad(ethers.utils.hexStripZeros(log.topics[1]),20).toLowerCase();
+    const to = ethers.utils.hexZeroPad(ethers.utils.hexStripZeros(log.topics[2]),20).toLowerCase();
+    const amount = ethers.utils.bigNumberify(log.data);
+    console.log('\x1b[2m',`##ES Transfer: ${addressLabel[from] || from} => ${addressLabel[to] || to} [ ${ethers.utils.commify(ethers.utils.formatEther(amount))} ES ]`);
+  });
+}
+
 /// @dev this is a test case collection
 describe('Ganache Setup', async() => {
 
@@ -61,6 +77,8 @@ describe('Ganache Setup', async() => {
 
     /// @dev then we have our expection that accounts array should be at least having 1 accounts
     assert.ok(accounts.length >= 1, 'atleast 2 accounts should be present in the array');
+
+    accounts.forEach((address,index) => addressLabel[address.toLowerCase()] = 'Account'+index);
   });
 });
 
@@ -76,6 +94,8 @@ describe('Eraswap Setup', () => {
     esInstance =  await EraswapContractFactory.deploy();
 
     assert.ok(esInstance.address, 'conract address should be present');
+
+    addressLabel[esInstance.address.toLowerCase()] = 'ESERC20'
   });
 });
 
@@ -96,13 +116,17 @@ describe('TimeAllyPET Contract', () => {
       );
       timeallyPETInstance =  await TimeAllyPETContractFactory.deploy(esInstance.address);
 
+      await parseERC20TransfersFromTx(timeallyPETInstance.deployTransaction);
+
       console.log('Balance of PET contract:', ethers.utils.formatEther(await esInstance.functions.balanceOf(timeallyPETInstance.address)), 'ES');
 
       assert.ok(timeallyPETInstance.address, 'conract address should be present');
+
+      addressLabel[timeallyPETInstance.address.toLowerCase()] = 'PET';
     });
 
     /// @dev this is second test case of this collection
-    it('value should be set properly while deploying', async() => {
+    it('owner, token values should be set properly while deploying', async() => {
 
       /// @dev you access the value at storage with ethers.js library of our custom contract method called getValue defined in contracts/TimeAllyPET.sol
       const ownerAddress = await timeallyPETInstance.functions.owner();
@@ -122,10 +146,10 @@ describe('TimeAllyPET Contract', () => {
     });
 
     it(`deployer sends ${account1Balance} ES to account 1`, async() => {
-      await esInstance.functions.transfer(
+      await parseERC20TransfersFromTx(esInstance.functions.transfer(
         accounts[1],
         ethers.utils.parseEther(account1Balance)
-      );
+      ));
 
       const balanceOf1 = await esInstance.functions.balanceOf(accounts[1]);
 
@@ -152,34 +176,47 @@ describe('TimeAllyPET Contract', () => {
       });
     });
 
-    it(`owner gives allowance of ${fundsDeposit} ES to PET contract`, async() => {
-      const approvalAmount = ethers.utils.parseEther(fundsDeposit);
-      await esInstance.functions.approve(timeallyPETInstance.address, approvalAmount);
+    it('fundsBucket contract should be deployed', async() => {
+      const fundsBucketAddress = await timeallyPETInstance.functions.fundsBucket();
 
-      const allowance = await esInstance.functions.allowance(accounts[0], timeallyPETInstance.address);
+      assert.ok(
+        fundsBucketAddress !== ethers.constants.AddressZero,
+        'funds bucket contract address should be set'
+      );
+
+      fundsBucketPETInstance = new ethers.Contract(fundsBucketAddress, fundsBucketPETJSON.abi, provider.getSigner(accounts[0]));
+
+      addressLabel[fundsBucketAddress.toLowerCase()] = 'FUNDS_BUCKET';
+    });
+
+    it(`owner gives allowance of ${fundsDeposit} ES to FundsBucketPET contract`, async() => {
+      const approvalAmount = ethers.utils.parseEther(fundsDeposit);
+      await parseERC20TransfersFromTx(esInstance.functions.approve(fundsBucketPETInstance.address, approvalAmount));
+
+      const allowance = await esInstance.functions.allowance(accounts[0], fundsBucketPETInstance.address);
 
       assert.ok(allowance.eq(approvalAmount), 'allowance should be set');
     });
 
-    it(`owner should be able to fund ${fundsDeposit} ES to the fundDeposit`, async() => {
+    it(`owner should be able to fund ${fundsDeposit} ES to the fundsBucket contract`, async() => {
       const balanceBefore = await esInstance.functions.balanceOf(accounts[0]);
-      const fundsDepositBefore = await timeallyPETInstance.functions.fundsDeposit();
+      const fundsDepositBefore = await esInstance.functions.allowance( fundsBucketPETInstance.address, timeallyPETInstance.address);
 
       const depositAmount = ethers.utils.parseEther(fundsDeposit);
-      const petId = 0;
+      // const petId = 0;
 
-      await timeallyPETInstance.functions.addFunds(
+      await parseERC20TransfersFromTx(fundsBucketPETInstance.functions.addFunds(
         depositAmount
-      );
+      ));
 
       const balanceAfter = await esInstance.functions.balanceOf(accounts[0]);
-      const fundsDepositAfter = await timeallyPETInstance.functions.fundsDeposit();
+      const fundsDepositAfter = await esInstance.functions.allowance( fundsBucketPETInstance.address, timeallyPETInstance.address);
 
       console.log('Balance of PET contract:', ethers.utils.formatEther(await esInstance.functions.balanceOf(timeallyPETInstance.address)), 'ES');
 
       assert.ok(
         fundsDepositAfter.sub(fundsDepositBefore).eq(depositAmount),
-        'increase in fundsDeposit should be deposit amount'
+        'increase in fundsBucket allowance should be deposit amount'
       );
 
       assert.ok(
@@ -198,7 +235,7 @@ describe('TimeAllyPET Contract', () => {
       const planId = petPlanId;
 
       /// @dev you sign and submit a transaction to local blockchain (ganache) initialized on line 10.
-      await _timeallyPETInstance.functions.newPET(planId);
+      await parseERC20TransfersFromTx(_timeallyPETInstance.functions.newPET(planId));
 
       /// @dev now get the value at storage
       const pet = await timeallyPETInstance.functions.pets(accounts[1], 0);
@@ -222,11 +259,11 @@ describe('TimeAllyPET Contract', () => {
       describe(`Depositing during month ${index+1}`, async() => {
         monthDepositArray.forEach(partDepositAmount => {
           describe(`Account 1 makes deposit of ${partDepositAmount} ES to their PET`, async() => {
-            it('account 1 gives allowance of 500 ES to PET contract', async() => {
+            it(`account 1 gives allowance of ${partDepositAmount} ES to PET contract`, async() => {
               const _esInstance = esInstance.connect(provider.getSigner(accounts[1]));
 
               const approvalAmount = ethers.utils.parseEther(partDepositAmount);
-              await _esInstance.functions.approve(timeallyPETInstance.address, approvalAmount);
+              await parseERC20TransfersFromTx(_esInstance.functions.approve(timeallyPETInstance.address, approvalAmount));
 
               const allowance = await _esInstance.functions.allowance(accounts[1], timeallyPETInstance.address);
 
@@ -243,9 +280,9 @@ describe('TimeAllyPET Contract', () => {
               const depositAmount = ethers.utils.parseEther(partDepositAmount);
               const petId = 0;
 
-              await _timeallyPETInstance.functions.makeDeposit(
+              await parseERC20TransfersFromTx(_timeallyPETInstance.functions.makeDeposit(
                 accounts[1], petId, depositAmount, false
-              );
+              ));
 
               const balanceAfter = await esInstance.functions.balanceOf(accounts[1]);
               const monthlyDepositAmountAfter = await timeallyPETInstance.functions.getMonthlyDepositedAmount(accounts[1],0,index+1);
@@ -316,17 +353,17 @@ describe('TimeAllyPET Contract', () => {
 
               const balanceBefore = await esInstance.functions.balanceOf(accounts[1]);
 
-              const tx = await _timeallyPETInstance.functions.withdrawAnnuity(
+              await parseERC20TransfersFromTx(_timeallyPETInstance.functions.withdrawAnnuity(
                 accounts[1],
                 0,
                 annuityMonthId
-              );
+              ));
 
-              if(annuityMonthId === 1) {
-                const receipt = await tx.wait();
-
-                console.log('#Burned:', ethers.utils.formatEther(ethers.utils.bigNumberify(receipt.logs.filter(log => log.topics[2] === ethers.constants.HashZero)[0].data)), 'ES');
-              }
+              // if(annuityMonthId === 1) {
+              //   const receipt = await tx.wait();
+              //
+              //   console.log('#Burned:', ethers.utils.formatEther(ethers.utils.bigNumberify(receipt.logs.filter(log => log.topics[2] === ethers.constants.HashZero)[0].data)), 'ES');
+              // }
 
               const balanceAfter = await esInstance.functions.balanceOf(accounts[1]);
 
@@ -345,11 +382,11 @@ describe('TimeAllyPET Contract', () => {
                 const balanceBefore = await esInstance.functions.balanceOf(accounts[1]);
 
                 try {
-                  await _timeallyPETInstance.functions.withdrawPowerBooster(
+                  await parseERC20TransfersFromTx(_timeallyPETInstance.functions.withdrawPowerBooster(
                     accounts[1],
                     0,
                     nextPowerBoosterWithdrawlMonthId
-                  );
+                  ));
 
                   const balanceAfter = await esInstance.functions.balanceOf(accounts[1]);
 

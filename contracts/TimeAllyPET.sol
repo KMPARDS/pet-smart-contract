@@ -7,6 +7,38 @@ minimum is 50% of maximum deposited yet or 500 ES
 
 */
 
+
+contract FundsBucketPET {
+  address public owner;
+  ERC20 public token;
+  address public petContract;
+
+  modifier onlyOwner() {
+    require(msg.sender == owner, 'only deployer can call');
+    _;
+  }
+
+  constructor(ERC20 _token, address _owner) public {
+    token = _token;
+    owner = _owner;
+    petContract = msg.sender;
+  }
+
+  function addFunds(uint256 _depositAmount) public {
+    token.transferFrom(msg.sender, address(this), _depositAmount);
+
+    token.approve(petContract, _depositAmount);
+  }
+
+  function withdrawFunds(bool _withdrawEverything, uint256 _withdrawlAmount) public onlyOwner {
+    if(_withdrawEverything) {
+      _withdrawlAmount = token.balanceOf(address(this));
+    }
+
+    token.transfer(msg.sender, _withdrawlAmount);
+  }
+}
+
 contract TimeAllyPET {
   using SafeMath for uint256;
 
@@ -29,12 +61,13 @@ contract TimeAllyPET {
   }
 
   address public owner;
+  address public fundsBucket;
   ERC20 public token;
 
   uint256 constant EARTH_SECONDS_IN_MONTH = 2629744;
 
   uint256 public pendingBenefitAmountOfAllStakers;
-  uint256 public fundsDeposit;
+  // uint256 public fundsDeposit;
 
   PETPlan[] public petPlans;
   mapping(address => PET[]) public pets;
@@ -57,6 +90,7 @@ contract TimeAllyPET {
   constructor(ERC20 _token) public {
     owner = msg.sender;
     token = _token;
+    fundsBucket = address(new FundsBucketPET(_token, msg.sender));
   }
 
   function createPETPlan(
@@ -70,40 +104,6 @@ contract TimeAllyPET {
     }));
     // add an event here
   }
-
-  function addFunds(uint256 _depositAmount) public {
-
-    /// @notice transfer tokens from the donor to contract
-    require(
-      token.transferFrom(msg.sender, address(this), _depositAmount)
-      , 'tokens should be transfered'
-    );
-
-    /// @notice increment amount in fundsDeposit
-    fundsDeposit = fundsDeposit.add(_depositAmount);
-
-    /// @notice emiting event that funds been deposited
-    // emit FundsDeposited(_depositAmount);
-  }
-
-  function withdrawFunds(uint256 _withdrawlAmount) public onlyOwner {
-
-    /// @notice check if withdrawing only unutilized tokens
-    require(
-      fundsDeposit.sub(pendingBenefitAmountOfAllStakers) >= _withdrawlAmount
-      , 'cannot withdraw excess funds'
-    );
-
-    /// @notice decrement amount in fundsDeposit
-    fundsDeposit = fundsDeposit.sub(_withdrawlAmount);
-
-    /// @notice transfer tokens to withdrawer
-    token.transfer(msg.sender, _withdrawlAmount);
-
-    /// @notice emit that funds are withdrawn
-    // emit FundsWithdrawn(_withdrawlAmount);
-  }
-
 
   /// in new PET, it is better to also take a first deposit
   function newPET(
@@ -193,10 +193,8 @@ contract TimeAllyPET {
 
     // here alocate funds for paying annuitity and power booster.
     // also if fund crosses commitment then alocate more funds
-    require(
-      fundsDeposit.sub(pendingBenefitAmountOfAllStakers) >= _extraBenefitAllocation
-      , 'enough funds should exist'
-    );
+
+    token.transferFrom(fundsBucket, address(this), _extraBenefitAllocation);
 
     pendingBenefitAmountOfAllStakers = pendingBenefitAmountOfAllStakers.add(_extraBenefitAllocation);
 
@@ -306,9 +304,8 @@ contract TimeAllyPET {
     }
 
     if(_annuityBenefit != 0) {
-      pendingBenefitAmountOfAllStakers = pendingBenefitAmountOfAllStakers.add(_annuityBenefit);
-
-      fundsDeposit = fundsDeposit.sub(_annuityBenefit);
+      // sub pending benefits
+      pendingBenefitAmountOfAllStakers = pendingBenefitAmountOfAllStakers.sub(_annuityBenefit);
 
       token.transfer(msg.sender, _annuityBenefit);
     }
@@ -391,14 +388,20 @@ contract TimeAllyPET {
 
     uint256 _powerBoosterAmount = calculatePowerBoosterAmount(_stakerAddress, _petId);
 
-    _pet.isPowerBoosterWithdrawn[_powerBoosterId] = true;
+    if(_powerBoosterAmount > 0) {
+      _pet.isPowerBoosterWithdrawn[_powerBoosterId] = true;
 
-    token.transfer(msg.sender, _powerBoosterAmount);
+      pendingBenefitAmountOfAllStakers = pendingBenefitAmountOfAllStakers.sub(_powerBoosterAmount);
+
+      token.transfer(msg.sender, _powerBoosterAmount);
+    }
   }
 }
 
 /// @dev For interface requirement
 abstract contract ERC20 {
+  function balanceOf(address tokenOwner) public view virtual returns (uint);
+  function approve(address delegate, uint numTokens) public virtual returns (bool);
   function transfer(address _to, uint256 _value) public virtual returns (bool success);
   function transferFrom(address _from, address _to, uint256 _value) public virtual returns (bool success);
   function burn(uint256 value) public virtual;

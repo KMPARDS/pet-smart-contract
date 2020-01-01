@@ -33,23 +33,45 @@ const PETPlans = [
   {minimumMonthlyCommitmentAmount: '10000', monthlyBenefitFactorPerThousand: '120'}
 ];
 
-const account1Balance = '80000';
-const fundsDeposit = '2000000';
-const petPlanId = 2;
+let account1Balance = '80000';
+let fundsDeposit = '2000000';
+const petPlanId = 4;
 const depositCases = [
-  ['2000'],
-  ['2800'],
-  ['4000'],
   ['1000'],
-  [],
-  ['500'],
-  ['2500'],
-  ['2500'],
-  ['50000'],
-  [],
-  ['2500'],
-  ['1000','500','2000']
-];
+  ['1000'],
+  ['1000'],
+  ['1000'],
+  ['1000'],
+  ['1000'],
+  ['1000'],
+  ['1000'],
+  ['1000'],
+  ['1000'],
+  ['1000'],
+  ['1000']
+]
+.map(member => [
+  String(Math.random()* +PETPlans[petPlanId].minimumMonthlyCommitmentAmount * 2.5)
+]);
+depositCases.forEach(depositCase => {
+  account1Balance = String(+account1Balance + +depositCase[0]);
+  if(+fundsDeposit < +account1Balance) fundsDeposit = account1Balance;
+});
+
+
+
+console.log('depositCases:');
+depositCases.forEach(monthCase => {
+  let type = '';
+  if(monthCase[0] >= +PETPlans[petPlanId].minimumMonthlyCommitmentAmount) {
+    type = 'High';
+  } else if(monthCase[0] >= +PETPlans[petPlanId].minimumMonthlyCommitmentAmount / 2) {
+    type = 'Medium';
+  } else {
+    type = 'Low';
+  }
+  console.log(`[ ${monthCase[0]} ] \t${type}`);
+});
 
 let nextPowerBoosterWithdrawlMonthId = 1;
 
@@ -64,6 +86,7 @@ async function parseERC20TransfersFromTx(tx) {
     const amount = ethers.utils.bigNumberify(log.data);
     console.log('\x1b[2m',`##ES Transfer: ${addressLabel[from] || from} => ${addressLabel[to] || to} [ ${ethers.utils.commify(ethers.utils.formatEther(amount))} ES ]`);
   });
+  return r;
 }
 
 /// @dev this is a test case collection
@@ -275,7 +298,7 @@ describe('TimeAllyPET Contract', () => {
 
               const balanceBefore = await esInstance.functions.balanceOf(accounts[1]);
               const monthlyDepositAmountBefore = await timeallyPETInstance.functions.getMonthlyDepositedAmount(accounts[1],0,index+1);
-              const allocatedFundsBefore = await timeallyPETInstance.functions.pendingBenefitAmountOfAllStakers();
+              // const allocatedFundsBefore = await timeallyPETInstance.functions.pendingBenefitAmountOfAllStakers();
 
               const depositAmount = ethers.utils.parseEther(partDepositAmount);
               const petId = 0;
@@ -286,14 +309,14 @@ describe('TimeAllyPET Contract', () => {
 
               const balanceAfter = await esInstance.functions.balanceOf(accounts[1]);
               const monthlyDepositAmountAfter = await timeallyPETInstance.functions.getMonthlyDepositedAmount(accounts[1],0,index+1);
-              const allocatedFundsAfter = await timeallyPETInstance.functions.pendingBenefitAmountOfAllStakers();
+              // const allocatedFundsAfter = await timeallyPETInstance.functions.pendingBenefitAmountOfAllStakers();
 
 
               const pet = await timeallyPETInstance.functions.pets(accounts[1], 0);
 
               console.log('Balance of PET contract:', ethers.utils.formatEther(await esInstance.functions.balanceOf(timeallyPETInstance.address)), 'ES');
 
-              console.log('Allocation of funds from fundsDeposit (annuitity and power booster):', ethers.utils.formatEther(allocatedFundsAfter.sub(allocatedFundsBefore)));
+              // console.log('Allocation of funds from fundsDeposit (annuitity and power booster):', ethers.utils.formatEther(allocatedFundsAfter.sub(allocatedFundsBefore)));
 
               for(let i = 0; i <= 13; i++) {
                 console.log(i, ethers.utils.formatEther(await timeallyPETInstance.functions.getMonthlyDepositedAmount(accounts[1],0,i)));
@@ -399,10 +422,13 @@ describe('TimeAllyPET Contract', () => {
                   // console.log(error.message, error.message.includes('target not achieved'));
                   if(error.message.includes('target not achieved')) {
                     // console.log(nextPowerBoosterWithdrawlMonthId);
+
+                    console.log('Power booster withdrawl failed because of target not acheived');
                     nextPowerBoosterWithdrawlMonthId++;
                     // console.log(nextPowerBoosterWithdrawlMonthId);
+                  } else {
+                    throw error;
                   }
-                  throw error;
                 }
               });
             });

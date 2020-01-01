@@ -3,10 +3,14 @@ pragma solidity ^0.6.0;
 import './SafeMath.sol';
 
 /*
-minimum is 50% of maximum deposited yet or 500 ES
+
+- add missing functionality
+
+- add events
+
+- audit the contract
 
 */
-
 
 contract FundsBucketPET {
   address public owner;
@@ -66,11 +70,14 @@ contract TimeAllyPET {
 
   uint256 constant EARTH_SECONDS_IN_MONTH = 2629744;
 
-  uint256 public pendingBenefitAmountOfAllStakers;
+  // uint256 public pendingBenefitAmountOfAllStakers;
   // uint256 public fundsDeposit;
 
   PETPlan[] public petPlans;
+
   mapping(address => PET[]) public pets;
+
+  mapping(address => uint256) public prepaidES;
 
   modifier onlyOwner() {
     require(msg.sender == owner, 'only deployer can call');
@@ -144,20 +151,24 @@ contract TimeAllyPET {
     PETPlan storage _petPlan = petPlans[_planId];
 
     // initialising benefit calculation with deposit amount
-    uint256 _benefitAllocation = _amount;
+    uint256 _depositAmountIncludingPET = _amount;
+    uint256 _benefitAllocation;
 
     // if amount more than commitment, consider the deposit amount as double
     if(_amount >= _petPlan.minimumMonthlyCommitmentAmount.div(2)) {
-      _benefitAllocation = _benefitAllocation.mul(2);
+      _depositAmountIncludingPET = _depositAmountIncludingPET.mul(2);
+      _benefitAllocation = _amount;
     }
 
     // calculate the benefits in 5 years due to this deposit
-    _benefitAllocation = _benefitAllocation.mul(_petPlan.monthlyBenefitFactorPerThousand).mul(5).div(1000);
+    _benefitAllocation = _benefitAllocation.add(
+      _depositAmountIncludingPET.mul(_petPlan.monthlyBenefitFactorPerThousand).mul(5).div(1000)
+    );
 
     // adding extra amount in power booster
-    if(_amount >= _petPlan.minimumMonthlyCommitmentAmount) {
-      _benefitAllocation = _benefitAllocation.add(_amount);
-    }
+    // if(_amount >= _petPlan.minimumMonthlyCommitmentAmount) {
+    //   _benefitAllocation = _benefitAllocation.add(_amount);
+    // }
 
     return _benefitAllocation;
   }
@@ -196,7 +207,7 @@ contract TimeAllyPET {
 
     token.transferFrom(fundsBucket, address(this), _extraBenefitAllocation);
 
-    pendingBenefitAmountOfAllStakers = pendingBenefitAmountOfAllStakers.add(_extraBenefitAllocation);
+    // pendingBenefitAmountOfAllStakers = pendingBenefitAmountOfAllStakers.add(_extraBenefitAllocation.add(_depositAmount));
 
     /// @dev recording the deposit
     _pet.monthlyDepositAmount[_depositMonth] = _updatedDepositAmount;
@@ -233,13 +244,13 @@ contract TimeAllyPET {
 
     for(uint256 _i = _startAnnuityMonthId; _i <= _endAnnuityMonthId; _i++) {
       uint256 _modulo = _i%12;
-      uint256 _depositDoneForThis = _pet.monthlyDepositAmount[_modulo==0?12:_modulo];
+      uint256 _depositAmountIncludingPET = _pet.monthlyDepositAmount[_modulo==0?12:_modulo];
 
-      if(_depositDoneForThis >= _petPlan.minimumMonthlyCommitmentAmount.div(2)) {
-        _depositDoneForThis = _depositDoneForThis.mul(2);
+      if(_depositAmountIncludingPET >= _petPlan.minimumMonthlyCommitmentAmount.div(2)) {
+        _depositAmountIncludingPET = _depositAmountIncludingPET.mul(2);
       }
 
-      _sumOfAnnuity = _sumOfAnnuity.add(_depositDoneForThis);
+      _sumOfAnnuity = _sumOfAnnuity.add(_depositAmountIncludingPET);
     }
 
     return _sumOfAnnuity.mul(_petPlan.monthlyBenefitFactorPerThousand).div(1000);
@@ -305,7 +316,7 @@ contract TimeAllyPET {
 
     if(_annuityBenefit != 0) {
       // sub pending benefits
-      pendingBenefitAmountOfAllStakers = pendingBenefitAmountOfAllStakers.sub(_annuityBenefit);
+      // pendingBenefitAmountOfAllStakers = pendingBenefitAmountOfAllStakers.sub(_annuityBenefit);
 
       token.transfer(msg.sender, _annuityBenefit);
     }
@@ -341,19 +352,19 @@ contract TimeAllyPET {
     PET storage _pet = pets[_stakerAddress][_petId];
     PETPlan storage _petPlan = petPlans[_pet.planId];
 
-    uint256 _totalDeposited;
+    uint256 _totalDepositedIncludingPET;
 
     for(uint256 _i = 1; _i <= 12; _i++) {
-      uint256 _depositDoneForThis = _pet.monthlyDepositAmount[_i];
+      uint256 _depositAmountIncludingPET = _pet.monthlyDepositAmount[_i];
 
-      if(_depositDoneForThis >= _petPlan.minimumMonthlyCommitmentAmount.div(2)) {
-        _depositDoneForThis = _depositDoneForThis.mul(2);
+      if(_depositAmountIncludingPET >= _petPlan.minimumMonthlyCommitmentAmount.div(2)) {
+        _depositAmountIncludingPET = _depositAmountIncludingPET.mul(2);
       }
 
-      _totalDeposited = _totalDeposited.add(_depositDoneForThis);
+      _totalDepositedIncludingPET = _totalDepositedIncludingPET.add(_depositAmountIncludingPET);
     }
 
-    return _totalDeposited.div(12);
+    return _totalDepositedIncludingPET.div(12);
   }
 
   function withdrawPowerBooster(
@@ -391,7 +402,7 @@ contract TimeAllyPET {
     if(_powerBoosterAmount > 0) {
       _pet.isPowerBoosterWithdrawn[_powerBoosterId] = true;
 
-      pendingBenefitAmountOfAllStakers = pendingBenefitAmountOfAllStakers.sub(_powerBoosterAmount);
+      // pendingBenefitAmountOfAllStakers = pendingBenefitAmountOfAllStakers.sub(_powerBoosterAmount);
 
       token.transfer(msg.sender, _powerBoosterAmount);
     }

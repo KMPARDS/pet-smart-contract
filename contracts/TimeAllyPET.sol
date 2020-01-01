@@ -301,6 +301,10 @@ contract TimeAllyPET {
 
     _pet.lastAnnuityWithdrawlMonthId = _endAnnuityMonthId;
 
+    if(_lastAnnuityWithdrawlMonthId == 0) {
+      _burnPenalisedPowerBoosterTokens(_stakerAddress, _petId);
+    }
+
     if(_annuityBenefit != 0) {
       pendingBenefitAmountOfAllStakers = pendingBenefitAmountOfAllStakers.add(_annuityBenefit);
 
@@ -310,6 +314,49 @@ contract TimeAllyPET {
     }
 
     // emit an event here
+  }
+
+  function _burnPenalisedPowerBoosterTokens(
+    address _stakerAddress,
+    uint256 _petId
+  ) private {
+    PET storage _pet = pets[_stakerAddress][_petId];
+    PETPlan storage _petPlan = petPlans[_pet.planId];
+
+    uint256 _unachieveTargetCount;
+    // uint256 _target = _petPlan.minimumMonthlyCommitmentAmount.div(2);
+
+    for(uint256 _i = 1; _i <= 12; _i++) {
+      if(_pet.monthlyDepositAmount[_i] < _petPlan.minimumMonthlyCommitmentAmount) {
+        _unachieveTargetCount++;
+      }
+    }
+
+    uint256 _powerBoosterAmount = calculatePowerBoosterAmount(_stakerAddress, _petId);
+
+    token.burn(_powerBoosterAmount.mul(_unachieveTargetCount));
+  }
+
+  function calculatePowerBoosterAmount(
+    address _stakerAddress,
+    uint256 _petId
+  ) public view returns (uint256) {
+    PET storage _pet = pets[_stakerAddress][_petId];
+    PETPlan storage _petPlan = petPlans[_pet.planId];
+
+    uint256 _totalDeposited;
+
+    for(uint256 _i = 1; _i <= 12; _i++) {
+      uint256 _depositDoneForThis = _pet.monthlyDepositAmount[_i];
+
+      if(_depositDoneForThis >= _petPlan.minimumMonthlyCommitmentAmount.div(2)) {
+        _depositDoneForThis = _depositDoneForThis.mul(2);
+      }
+
+      _totalDeposited = _totalDeposited.add(_depositDoneForThis);
+    }
+
+    return _totalDeposited.div(12);
   }
 
   function withdrawPowerBooster(
@@ -342,21 +389,9 @@ contract TimeAllyPET {
       , 'cannot withdraw early'
     );
 
-    uint256 _totalDeposited;
-
-    for(uint256 _i = 1; _i <= 12; _i++) {
-      uint256 _depositDoneForThis = _pet.monthlyDepositAmount[_i];
-
-      if(_depositDoneForThis >= _petPlan.minimumMonthlyCommitmentAmount.div(2)) {
-        _depositDoneForThis = _depositDoneForThis.mul(2);
-      }
-
-      _totalDeposited = _totalDeposited.add(_depositDoneForThis);
-    }
+    uint256 _powerBoosterAmount = calculatePowerBoosterAmount(_stakerAddress, _petId);
 
     _pet.isPowerBoosterWithdrawn[_powerBoosterId] = true;
-
-    uint256 _powerBoosterAmount = _totalDeposited.div(12);
 
     token.transfer(msg.sender, _powerBoosterAmount);
   }
@@ -366,4 +401,5 @@ contract TimeAllyPET {
 abstract contract ERC20 {
   function transfer(address _to, uint256 _value) public virtual returns (bool success);
   function transferFrom(address _from, address _to, uint256 _value) public virtual returns (bool success);
+  function burn(uint256 value) public virtual;
 }

@@ -316,11 +316,17 @@ describe('TimeAllyPET Contract', () => {
 
               const balanceBefore = await esInstance.functions.balanceOf(accounts[1]);
 
-              await _timeallyPETInstance.functions.withdrawAnnuity(
+              const tx = await _timeallyPETInstance.functions.withdrawAnnuity(
                 accounts[1],
                 0,
                 annuityMonthId
               );
+
+              if(annuityMonthId === 1) {
+                const receipt = await tx.wait();
+
+                console.log('#Burned:', ethers.utils.formatEther(ethers.utils.bigNumberify(receipt.logs.filter(log => log.topics[2] === ethers.constants.HashZero)[0].data)), 'ES');
+              }
 
               const balanceAfter = await esInstance.functions.balanceOf(accounts[1]);
 

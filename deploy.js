@@ -43,6 +43,25 @@ const deployFile = async jsonFileName => {
 
   await contractInstance.deployTransaction.wait();
   console.log(`Contract is deployed at ${contractInstance.address}\n`);
+
+  const PETPlans = [
+    {minimumMonthlyCommitmentAmount: '500', monthlyBenefitFactorPerThousand: '100'},
+    {minimumMonthlyCommitmentAmount: '1000', monthlyBenefitFactorPerThousand: '105'},
+    {minimumMonthlyCommitmentAmount: '2500', monthlyBenefitFactorPerThousand: '110'},
+    {minimumMonthlyCommitmentAmount: '5000', monthlyBenefitFactorPerThousand: '115'},
+    {minimumMonthlyCommitmentAmount: '10000', monthlyBenefitFactorPerThousand: '120'}
+  ]
+
+  for(const plan of PETPlans) {
+    console.log(`Creating PET Plan of ${plan.minimumMonthlyCommitmentAmount} ES user target...`);
+    const tx = await contractInstance.functions.createPETPlan(
+      ethers.utils.parseEther(plan.minimumMonthlyCommitmentAmount),
+      plan.monthlyBenefitFactorPerThousand
+    );
+    console.log('Waiting for confirmation');
+    await tx.wait();
+    console.log(`PET Plan of ${plan.minimumMonthlyCommitmentAmount} ES created!\n`);
+  }
 };
 
 if(process.argv[2] === 'deployall') {

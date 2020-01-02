@@ -10,6 +10,15 @@ import './SafeMath.sol';
 
 - audit the contract
 
+- rearrange functions
+
+- add comments natspec
+
+- put update plan status function
+
+- add burning event
+
+- check all token transfer non zero txs
 */
 
 contract FundsBucketPET {
@@ -70,14 +79,69 @@ contract TimeAllyPET {
 
   uint256 constant EARTH_SECONDS_IN_MONTH = 2629744;
 
-  // uint256 public pendingBenefitAmountOfAllStakers;
-  // uint256 public fundsDeposit;
-
   PETPlan[] public petPlans;
 
   mapping(address => PET[]) public pets;
 
   mapping(address => uint256) public prepaidES;
+
+  event NewPET (
+    address indexed _staker,
+    uint256 _petId
+    // uint256 _monthlyCommitmentAmount
+  );
+
+  /// @notice event schema for monitoring deposits made by stakers to pets
+  event NewDeposit (
+    address indexed _staker,
+    uint256 indexed _petId,
+    uint256 _monthId,
+    uint256 _depositAmount,
+    uint256 _benefitAllocated, // check if this is really required
+    address _depositedBy
+  );
+
+  /// @notice event schema for monitoring sip benefit withdrawn by stakers
+  event AnnuityWithdrawl (
+    address indexed _staker,
+    uint256 indexed _petId,
+    uint256 _fromMonthId,
+    uint256 _toMonthId,
+    uint256 _withdrawlAmount,
+    address _withdrawnBy
+  );
+
+  /// @notice event schema for monitoring power booster withdrawn by stakers
+  event PowerBoosterWithdrawl (
+    address indexed _staker,
+    uint256 indexed _petId,
+    uint256 _powerBoosterId,
+    uint256 _withdrawlAmount,
+    address _withdrawnBy
+  );
+
+  /// @notice event schema for monitoring power booster withdrawn by stakers
+  event NomineeUpdated (
+    address indexed _staker,
+    uint256 indexed _petId,
+    address indexed _nomineeAddress,
+    bool _nomineeStatus
+  );
+
+  /// @notice event schema for monitoring power booster withdrawls by stakers
+  event AppointeeUpdated (
+    address indexed _staker,
+    uint256 indexed _petId,
+    address indexed _appointeeAddress,
+    bool _appointeeStatus
+  );
+
+  /// @notice event schema for monitoring power booster withdrawls by stakers
+  event AppointeeVoted (
+    address indexed _staker,
+    uint256 indexed _petId,
+    address indexed _appointeeAddress
+  );
 
   modifier onlyOwner() {
     require(msg.sender == owner, 'only deployer can call');
@@ -98,6 +162,21 @@ contract TimeAllyPET {
     owner = msg.sender;
     token = _token;
     fundsBucket = address(new FundsBucketPET(_token, msg.sender));
+  }
+
+  function addToPrepaid(uint256 _amount) public {
+    require(token.transferFrom(msg.sender, address(this), _amount));
+    prepaidES[msg.sender] = prepaidES[msg.sender].add(_amount);
+  }
+
+  function sendPrepaidESDifferent(
+    address[] memory _addresses,
+    uint256[] memory _amounts
+  ) public {
+    for(uint256 i = 0; i < _addresses.length; i++) {
+      prepaidES[msg.sender] = prepaidES[msg.sender].sub(_amounts[i]);
+      prepaidES[_addresses[i]] = prepaidES[_addresses[i]].add(_amounts[i]);
+    }
   }
 
   function createPETPlan(
@@ -130,6 +209,10 @@ contract TimeAllyPET {
     }));
 
     // emit an event here
+    emit NewPET(
+      msg.sender,
+      pets[msg.sender].length - 1
+    );
   }
 
   function getMonthlyDepositedAmount(
@@ -147,7 +230,7 @@ contract TimeAllyPET {
     return (now - pets[_stakerAddress][_petId].initTimestamp)/EARTH_SECONDS_IN_MONTH + 1;
   }
 
-  function _getBenefitAllocationByDepositAmount(uint256 _amount, uint256 _planId) private returns (uint256) {
+  function _getBenefitAllocationByDepositAmount(uint256 _amount, uint256 _planId) private view returns (uint256) {
     PETPlan storage _petPlan = petPlans[_planId];
 
     // initialising benefit calculation with deposit amount
@@ -182,13 +265,19 @@ contract TimeAllyPET {
     require(_depositAmount > 0, 'deposit amount should be non zero');
 
     PET storage _pet = pets[_stakerAddress][_petId];
-    PETPlan storage _petPlan = petPlans[_pet.planId];
+    // PETPlan storage _petPlan = petPlans[_pet.planId];
 
     uint256 _depositMonth = getDepositMonth(_stakerAddress, _petId);
 
     require(_depositMonth <= 12, 'cannot deposit after accumulation period');
 
-    token.transferFrom(msg.sender, address(this), _depositAmount);
+    if(_usePrepaidES) {
+      /// @notice subtracting prepaidES from staker
+      prepaidES[msg.sender] = prepaidES[msg.sender].sub(_depositAmount);
+    } else {
+      /// @notice transfering staker tokens to PET contract
+      token.transferFrom(msg.sender, address(this), _depositAmount);
+    }
 
     uint256 _updatedDepositAmount = _pet.monthlyDepositAmount[_depositMonth].add(_depositAmount);
 
@@ -211,6 +300,15 @@ contract TimeAllyPET {
 
     /// @dev recording the deposit
     _pet.monthlyDepositAmount[_depositMonth] = _updatedDepositAmount;
+
+    emit NewDeposit(
+      _stakerAddress,
+      _petId,
+      _depositMonth,
+      _depositAmount,
+      _extraBenefitAllocation,
+      msg.sender
+    );
   }
 
   // function getMonthlyBenefitAmount(
@@ -322,6 +420,14 @@ contract TimeAllyPET {
     }
 
     // emit an event here
+    emit AnnuityWithdrawl(
+      _stakerAddress,
+      _petId,
+      _lastAnnuityWithdrawlMonthId+1,
+      _endAnnuityMonthId,
+      _annuityBenefit,
+      msg.sender
+    );
   }
 
   function _burnPenalisedPowerBoosterTokens(
@@ -343,6 +449,8 @@ contract TimeAllyPET {
     uint256 _powerBoosterAmount = calculatePowerBoosterAmount(_stakerAddress, _petId);
 
     token.burn(_powerBoosterAmount.mul(_unachieveTargetCount));
+
+    //add burn event here
   }
 
   function calculatePowerBoosterAmount(
@@ -405,7 +513,87 @@ contract TimeAllyPET {
       // pendingBenefitAmountOfAllStakers = pendingBenefitAmountOfAllStakers.sub(_powerBoosterAmount);
 
       token.transfer(msg.sender, _powerBoosterAmount);
+
+      emit PowerBoosterWithdrawl(
+        _stakerAddress,
+        _petId,
+        _powerBoosterId,
+        _powerBoosterAmount,
+        msg.sender
+      );
     }
+  }
+
+  function viewNomination(
+    address _stakerAddress,
+    uint256 _petId,
+    address _nomineeAddress
+  ) public view returns (bool) {
+    return pets[_stakerAddress][_petId].nominees[_nomineeAddress];
+  }
+
+  function viewAppointation(
+    address _stakerAddress,
+    uint256 _petId,
+    address _appointeeAddress
+  ) public view returns (bool) {
+    return pets[_stakerAddress][_petId].appointees[_appointeeAddress];
+  }
+
+  function appointeeVote(
+    address _stakerAddress,
+    uint256 _petId
+  ) public {
+    PET storage _pet = pets[_stakerAddress][_petId];
+
+    /// @notice checking if appointee has rights to cast a vote
+    require(_pet.appointees[msg.sender]
+      , 'should be appointee to cast vote'
+    );
+
+    /// @notice removing appointee's rights to vote again
+    _pet.appointees[msg.sender] = false;
+
+    /// @notice adding a vote to PET
+    _pet.appointeeVotes = _pet.appointeeVotes.add(1);
+
+    /// @notice emit that appointee has voted
+    emit AppointeeVoted(_stakerAddress, _petId, msg.sender);
+  }
+
+  function toogleAppointee(
+    uint256 _petId,
+    address _appointeeAddress,
+    bool _newAppointeeStatus
+  ) public {
+    PET storage _pet = pets[msg.sender][_petId];
+
+    /// @notice if not an appointee already and _newAppointeeStatus is true, adding appointee
+    if(!_pet.appointees[_appointeeAddress] && _newAppointeeStatus) {
+      _pet.numberOfAppointees = _pet.numberOfAppointees.add(1);
+      _pet.appointees[_appointeeAddress] = true;
+    }
+
+    /// @notice if already an appointee and _newAppointeeStatus is false, removing appointee
+    else if(_pet.appointees[_appointeeAddress] && !_newAppointeeStatus) {
+      _pet.appointees[_appointeeAddress] = false;
+      _pet.numberOfAppointees = _pet.numberOfAppointees.sub(1);
+    }
+
+    emit AppointeeUpdated(msg.sender, _petId, _appointeeAddress, _newAppointeeStatus);
+  }
+
+  function toogleNominee(
+    uint256 _petId,
+    address _nomineeAddress,
+    bool _newNomineeStatus
+  ) public {
+
+    /// @notice updating nominee status
+    pets[msg.sender][_petId].nominees[_nomineeAddress] = _newNomineeStatus;
+
+    /// @notice emiting event for UI and other applications
+    emit NomineeUpdated(msg.sender, _petId, _nomineeAddress, _newNomineeStatus);
   }
 }
 

@@ -19,6 +19,11 @@ import './SafeMath.sol';
 - add burning event
 
 - check all token transfer non zero txs
+
+- deposit carry forward
+done; to be tested
+
+- make top up amount be considered as half for benefits
 */
 
 contract FundsBucketPET {
@@ -223,6 +228,50 @@ contract TimeAllyPET {
     return pets[_stakerAddress][_petId].monthlyDepositAmount[_monthId];
   }
 
+  function getConsideredMonthlyDepositedAmount(
+    address _stakerAddress,
+    uint256 _petId,
+    uint256 _monthId
+  ) public view returns (uint256) {
+    PET storage _pet = pets[_stakerAddress][_petId];
+
+    return _getConsideredMonthlyDepositedAmount(_stakerAddress, _petId, _monthId - 1, _pet.monthlyDepositAmount[_monthId]);
+  }
+
+  function _getConsideredMonthlyDepositedAmount(
+    address _stakerAddress,
+    uint256 _petId,
+    uint256 _monthId,
+    uint256 _carryForward
+  ) private view returns (uint256) {
+    PET storage _pet = pets[_stakerAddress][_petId];
+    PETPlan storage _petPlan = petPlans[_pet.planId];
+
+    if(_monthId < 1 || 12 < _monthId) {
+      return _carryForward;
+    }
+
+    uint256 _thisMonthDepositAmount = _pet.monthlyDepositAmount[_monthId];
+
+    if(_thisMonthDepositAmount < _petPlan.minimumMonthlyCommitmentAmount) {
+      _carryForward = _carryForward.add(_thisMonthDepositAmount);
+    } else {
+      return _carryForward;
+    }
+
+    if(_carryForward >= _petPlan.minimumMonthlyCommitmentAmount) {
+      return _carryForward;
+    }
+
+
+    return _getConsideredMonthlyDepositedAmount(
+      _stakerAddress,
+      _petId,
+      _monthId - 1,
+      _carryForward
+    );
+  }
+
   function getDepositMonth(
     address _stakerAddress,
     uint256 _petId
@@ -230,23 +279,27 @@ contract TimeAllyPET {
     return (now - pets[_stakerAddress][_petId].initTimestamp)/EARTH_SECONDS_IN_MONTH + 1;
   }
 
-  function _getBenefitAllocationByDepositAmount(uint256 _amount, uint256 _planId) private view returns (uint256) {
+  function _getBenefitAllocationByDepositAmount(uint256 _amount, uint256 _planId, uint256 _depositMonth) private view returns (uint256) {
     PETPlan storage _petPlan = petPlans[_planId];
 
     // initialising benefit calculation with deposit amount
     uint256 _depositAmountIncludingPET = _amount;
     uint256 _benefitAllocation;
 
-    // if amount more than commitment, consider the deposit amount as double
+    // if amount more than half of commitment, consider the deposit amount as double
     if(_amount >= _petPlan.minimumMonthlyCommitmentAmount.div(2)) {
       _depositAmountIncludingPET = _depositAmountIncludingPET.mul(2);
+
+      // adding power booster
       _benefitAllocation = _amount;
     }
 
     // calculate the benefits in 5 years due to this deposit
-    _benefitAllocation = _benefitAllocation.add(
-      _depositAmountIncludingPET.mul(_petPlan.monthlyBenefitFactorPerThousand).mul(5).div(1000)
-    );
+    if(_amount >= _petPlan.minimumMonthlyCommitmentAmount.div(2) || _depositMonth == 12) {
+      _benefitAllocation = _benefitAllocation.add(
+        _depositAmountIncludingPET.mul(_petPlan.monthlyBenefitFactorPerThousand).mul(5).div(1000)
+      );
+    }
 
     // adding extra amount in power booster
     // if(_amount >= _petPlan.minimumMonthlyCommitmentAmount) {
@@ -265,7 +318,7 @@ contract TimeAllyPET {
     require(_depositAmount > 0, 'deposit amount should be non zero');
 
     PET storage _pet = pets[_stakerAddress][_petId];
-    // PETPlan storage _petPlan = petPlans[_pet.planId];
+    PETPlan storage _petPlan = petPlans[_pet.planId];
 
     uint256 _depositMonth = getDepositMonth(_stakerAddress, _petId);
 
@@ -281,14 +334,28 @@ contract TimeAllyPET {
 
     uint256 _updatedDepositAmount = _pet.monthlyDepositAmount[_depositMonth].add(_depositAmount);
 
+    // uint256 _carryForwardAmount;
+    uint256 _previousMonth = _depositMonth - 1;
+
+    while(_previousMonth > 0) {
+      if(0 < _pet.monthlyDepositAmount[_previousMonth]
+      && _pet.monthlyDepositAmount[_previousMonth] < _petPlan.minimumMonthlyCommitmentAmount.div(2)) {
+        _updatedDepositAmount = _updatedDepositAmount.add(_pet.monthlyDepositAmount[_previousMonth]);
+        _pet.monthlyDepositAmount[_previousMonth] = 0;
+      }
+      _previousMonth -= 1;
+    }
+
     // also calculate old allocation, to adjust it in new allocation
     uint256 _oldBenefitAllocation = _getBenefitAllocationByDepositAmount(
       _pet.monthlyDepositAmount[_depositMonth],
-      _pet.planId
+      _pet.planId,
+      _depositMonth
     );
     uint256 _extraBenefitAllocation = _getBenefitAllocationByDepositAmount(
       _updatedDepositAmount,
-      _pet.planId
+      _pet.planId,
+      _depositMonth
     ).sub(_oldBenefitAllocation);
 
     // here alocate funds for paying annuitity and power booster.

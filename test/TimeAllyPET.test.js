@@ -35,28 +35,28 @@ const PETPlans = [
 
 let account1Balance = '80000';
 let fundsDeposit = '2000000';
-const petPlanId = 4;
+const petPlanId = 1;
 const depositCases = [
   ['1000'],
   ['1000'],
   ['1000'],
   ['1000'],
+  [],
   ['1000'],
   ['1000'],
   ['1000'],
   ['1000'],
-  ['1000'],
-  ['1000'],
-  ['1000'],
-  ['1000']
+  ['6000'],
+  ['2000'],
+  ['200']
 ]
-.map(member => [
-  String(Math.random()* +PETPlans[petPlanId].minimumMonthlyCommitmentAmount * 2.5)
-]);
-depositCases.forEach(depositCase => {
-  account1Balance = String(+account1Balance + +depositCase[0]);
-  if(+fundsDeposit < +account1Balance) fundsDeposit = account1Balance;
-});
+// .map(member => [
+//   String(Math.random()* +PETPlans[petPlanId].minimumMonthlyCommitmentAmount * 2)
+// ]);
+// depositCases.forEach(depositCase => {
+//   account1Balance = String(+account1Balance + +depositCase[0]);
+//   if(+fundsDeposit < +account1Balance) fundsDeposit = account1Balance;
+// });
 
 
 
@@ -303,9 +303,23 @@ describe('TimeAllyPET Contract', () => {
               const depositAmount = ethers.utils.parseEther(partDepositAmount);
               const petId = 0;
 
+              let carryForwardAmount = ethers.constants.Zero;
+              let previousMonthId = index;
+              while(previousMonthId > 0) {
+                const previousMonthDeposit = await timeallyPETInstance.functions.getMonthlyDepositedAmount(accounts[1],0,previousMonthId);
+                // console.log('previousMonthDeposit',ethers.utils.formatEther(previousMonthDeposit));
+                if(ethers.utils.parseEther(PETPlans[petPlanId].minimumMonthlyCommitmentAmount).div(2).gt(previousMonthDeposit)) {
+                  carryForwardAmount = carryForwardAmount.add(previousMonthDeposit);
+                }
+                previousMonthId--;
+              }
+
+
               await parseERC20TransfersFromTx(_timeallyPETInstance.functions.makeDeposit(
                 accounts[1], petId, depositAmount, false
               ));
+
+              console.log('*carryForwardAmount',ethers.utils.formatEther(carryForwardAmount));
 
               const balanceAfter = await esInstance.functions.balanceOf(accounts[1]);
               const monthlyDepositAmountAfter = await timeallyPETInstance.functions.getMonthlyDepositedAmount(accounts[1],0,index+1);
@@ -319,11 +333,13 @@ describe('TimeAllyPET Contract', () => {
               // console.log('Allocation of funds from fundsDeposit (annuitity and power booster):', ethers.utils.formatEther(allocatedFundsAfter.sub(allocatedFundsBefore)));
 
               for(let i = 0; i <= 13; i++) {
-                console.log(i, ethers.utils.formatEther(await timeallyPETInstance.functions.getMonthlyDepositedAmount(accounts[1],0,i)));
+                console.log(i, ethers.utils.formatEther(await timeallyPETInstance.functions.getMonthlyDepositedAmount(accounts[1],0,i)),
+                // ethers.utils.formatEther(await timeallyPETInstance.functions.getConsideredMonthlyDepositedAmount(accounts[1],0,i))
+                );
               }
 
               assert.ok(
-                monthlyDepositAmountAfter.sub(monthlyDepositAmountBefore).eq(depositAmount),
+                monthlyDepositAmountAfter.sub(carryForwardAmount).sub(monthlyDepositAmountBefore).eq(depositAmount),
                 'increase in monthly deposit should be deposit amount'
               );
 

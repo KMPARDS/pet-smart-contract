@@ -24,6 +24,12 @@ import './SafeMath.sol';
 done; to be tested
 
 - make top up amount be considered as half for benefits
+
+- consider adding a function in funds bucket contract for reusing it
+
+- add mou time machine for development purpose when deploying on testnet
+
+- 50% PET bounty on topup
 */
 
 contract FundsBucketPET {

@@ -214,7 +214,7 @@ contract TimeAllyPET {
 
     pets[msg.sender].push(PET({
       planId: _planId,
-      initTimestamp: now,
+      initTimestamp: token.mou(),
       lastAnnuityWithdrawlMonthId: 0,
       appointeeVotes: 0,
       numberOfAppointees: 0
@@ -283,7 +283,7 @@ contract TimeAllyPET {
     address _stakerAddress,
     uint256 _petId
   ) public view returns (uint256) {
-    return (now - pets[_stakerAddress][_petId].initTimestamp)/EARTH_SECONDS_IN_MONTH + 1;
+    return (token.mou() - pets[_stakerAddress][_petId].initTimestamp)/EARTH_SECONDS_IN_MONTH + 1;
   }
 
   function _getTotalDepositedIncludingPET(uint256 _amount, uint256 _planId) private view returns (uint256) {
@@ -477,7 +477,7 @@ contract TimeAllyPET {
   ) public meOrNominee(_stakerAddress, _petId) {
     PET storage _pet = pets[_stakerAddress][_petId];
     uint256 _lastAnnuityWithdrawlMonthId = _pet.lastAnnuityWithdrawlMonthId;
-    // uint256 _currentAnnuityMonthId = ((now - _pet.initTimestamp).sub(12)) / EARTH_SECONDS_IN_MONTH;
+    // uint256 _currentAnnuityMonthId = ((token.mou() - _pet.initTimestamp).sub(12)) / EARTH_SECONDS_IN_MONTH;
 
     require(
       _lastAnnuityWithdrawlMonthId < _endAnnuityMonthId
@@ -492,7 +492,7 @@ contract TimeAllyPET {
     uint256 _allowedTimestamp = _getNomineeAllowedTimestamp(_stakerAddress, _petId, _endAnnuityMonthId);
 
     require(
-      now >= _allowedTimestamp
+      token.mou() >= _allowedTimestamp
       , 'cannot withdraw early'
     );
 
@@ -600,7 +600,7 @@ contract TimeAllyPET {
     uint256 _allowedTimestamp = _getNomineeAllowedTimestamp(_stakerAddress, _petId, _powerBoosterId*5+1);
 
     require(
-      now >= _allowedTimestamp
+      token.mou() >= _allowedTimestamp
       , 'cannot withdraw early'
     );
 

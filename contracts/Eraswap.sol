@@ -25,6 +25,31 @@ contract ERC20Basic {
 	balances[msg.sender] = totalSupply_;
     }
 
+    int256 public timeMachineDepth;
+
+
+    // gives the time machine time
+    function mou() public view returns(uint256) {
+        if(timeMachineDepth < 0) {
+            return now - uint256(timeMachineDepth);
+        } else {
+            return now + uint256(timeMachineDepth);
+        }
+    }
+
+    // sets the time machine depth
+    function setTimeMachineDepth(int256 _timeMachineDepth) public {
+        timeMachineDepth = _timeMachineDepth;
+    }
+
+    function goToFuture(uint256 _seconds) public {
+        timeMachineDepth += int256(_seconds);
+    }
+
+    function goToPast(uint256 _seconds) public {
+        timeMachineDepth -= int256(_seconds);
+    }
+
     function totalSupply() public view returns (uint256) {
 	return totalSupply_;
     }

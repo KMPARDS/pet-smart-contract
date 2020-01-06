@@ -24,6 +24,7 @@ import './SafeMath.sol';
 done; to be tested
 
 - make top up amount be considered as half for benefits
+done;
 
 - consider adding a function in funds bucket contract for reusing it
 
@@ -112,7 +113,7 @@ contract TimeAllyPET {
     address _depositedBy
   );
 
-  /// @notice event schema for monitoring sip benefit withdrawn by stakers
+  /// @notice event schema for monitoring pet benefit withdrawn by stakers
   event AnnuityWithdrawl (
     address indexed _staker,
     uint256 indexed _petId,
@@ -285,20 +286,42 @@ contract TimeAllyPET {
     return (now - pets[_stakerAddress][_petId].initTimestamp)/EARTH_SECONDS_IN_MONTH + 1;
   }
 
+  function _getTotalDepositedIncludingPET(uint256 _amount, uint256 _planId) private view returns (uint256) {
+    PETPlan storage _petPlan = petPlans[_planId];
+
+    uint256 _petAmount;
+
+    if(_amount > _petPlan.minimumMonthlyCommitmentAmount) {
+      uint256 _topupAmount = _amount.sub(_petPlan.minimumMonthlyCommitmentAmount);
+      _petAmount = _petPlan.minimumMonthlyCommitmentAmount.add(_topupAmount.div(2));
+    } else if(_amount >= _petPlan.minimumMonthlyCommitmentAmount.div(2)) {
+      _petAmount = _amount;
+    }
+
+    return _amount.add(_petAmount);
+  }
+
   function _getBenefitAllocationByDepositAmount(uint256 _amount, uint256 _planId, uint256 _depositMonth) private view returns (uint256) {
     PETPlan storage _petPlan = petPlans[_planId];
 
-    // initialising benefit calculation with deposit amount
-    uint256 _depositAmountIncludingPET = _amount;
-    uint256 _benefitAllocation;
+    // if amount is less than half then deposit amount is _amount
+    // if amount is between half to commitment then amount is 2 * _amount
+    // if amount is above commitment then amount + commitment + amount / 2
+    // calculate _depositAmountIncludingPET give annuity on this amount
 
-    // if amount more than half of commitment, consider the deposit amount as double
-    if(_amount >= _petPlan.minimumMonthlyCommitmentAmount.div(2)) {
-      _depositAmountIncludingPET = _depositAmountIncludingPET.mul(2);
+    uint256 _petAmount;
 
-      // adding power booster
-      _benefitAllocation = _amount;
+    if(_amount > _petPlan.minimumMonthlyCommitmentAmount) {
+      uint256 _topupAmount = _amount.sub(_petPlan.minimumMonthlyCommitmentAmount);
+      _petAmount = _petPlan.minimumMonthlyCommitmentAmount.add(_topupAmount.div(2));
+    } else if(_amount >= _petPlan.minimumMonthlyCommitmentAmount.div(2)) {
+      _petAmount = _amount;
     }
+
+    uint256 _depositAmountIncludingPET = _getTotalDepositedIncludingPET(_amount, _planId);
+
+    // power booster
+    uint256 _benefitAllocation = _petAmount;
 
     // calculate the benefits in 5 years due to this deposit
     if(_amount >= _petPlan.minimumMonthlyCommitmentAmount.div(2) || _depositMonth == 12) {
@@ -415,11 +438,12 @@ contract TimeAllyPET {
 
     for(uint256 _i = _startAnnuityMonthId; _i <= _endAnnuityMonthId; _i++) {
       uint256 _modulo = _i%12;
-      uint256 _depositAmountIncludingPET = _pet.monthlyDepositAmount[_modulo==0?12:_modulo];
+      uint256 _depositAmountIncludingPET = _getTotalDepositedIncludingPET(_pet.monthlyDepositAmount[_modulo==0?12:_modulo], _pet.planId);
+      // uint256 _depositAmountIncludingPET = _pet.monthlyDepositAmount[_modulo==0?12:_modulo];
 
-      if(_depositAmountIncludingPET >= _petPlan.minimumMonthlyCommitmentAmount.div(2)) {
-        _depositAmountIncludingPET = _depositAmountIncludingPET.mul(2);
-      }
+      // if(_depositAmountIncludingPET >= _petPlan.minimumMonthlyCommitmentAmount.div(2)) {
+      //   _depositAmountIncludingPET = _depositAmountIncludingPET.mul(2);
+      // }
 
       _sumOfAnnuity = _sumOfAnnuity.add(_depositAmountIncludingPET);
     }
@@ -536,11 +560,13 @@ contract TimeAllyPET {
     uint256 _totalDepositedIncludingPET;
 
     for(uint256 _i = 1; _i <= 12; _i++) {
-      uint256 _depositAmountIncludingPET = _pet.monthlyDepositAmount[_i];
+      // uint256 _depositAmountIncludingPET = _pet.monthlyDepositAmount[_i];
+      //
+      // if(_depositAmountIncludingPET >= _petPlan.minimumMonthlyCommitmentAmount.div(2)) {
+      //   _depositAmountIncludingPET = _depositAmountIncludingPET.mul(2);
+      // }
 
-      if(_depositAmountIncludingPET >= _petPlan.minimumMonthlyCommitmentAmount.div(2)) {
-        _depositAmountIncludingPET = _depositAmountIncludingPET.mul(2);
-      }
+      uint256 _depositAmountIncludingPET = _getTotalDepositedIncludingPET(_pet.monthlyDepositAmount[_i], _pet.planId);
 
       _totalDepositedIncludingPET = _totalDepositedIncludingPET.add(_depositAmountIncludingPET);
     }

@@ -33,46 +33,88 @@ done;
 - 50% PET bounty on topup
 */
 
+/// @title Fund Bucket of TimeAlly Personal EraSwap Teller
+/// @author The EraSwap Team
+/// @notice The benefits for PET Smart Contract are transparently stored in advance in this contract
 contract FundsBucketPET {
-  address public owner;
+
+  /// @notice address of the maintainer
+  address public deployer;
+
+  /// @notice address of Era Swap ERC20 Smart Contract
   ERC20 public token;
+
+  /// @notice address of PET Smart Contract
   address public petContract;
 
-  modifier onlyOwner() {
-    require(msg.sender == owner, 'only deployer can call');
+  /// @notice event schema for monitoring funds added by donors
+  /// @dev this is parameter less
+  event FundsDeposited(
+    address _depositer,
+    uint256 _depositAmount
+  );
+
+  /// @notice event schema for monitoring unallocated fund withdrawn by deployer
+  event FundsWithdrawn(
+    address _withdrawer,
+    uint256 _withdrawAmount
+  );
+
+  /// @notice restricting access to some functionalities to deployer
+  modifier onlyDeployer() {
+    require(msg.sender == deployer, 'only deployer can call');
     _;
   }
 
-  constructor(ERC20 _token, address _owner) public {
+  /// @notice this function is used to deploy FundsBucket Smart Contract
+  ///   the same time while deploying PET Smart Contract
+  /// @dev this smart contract is deployed by PET Smart Contract while being set up
+  /// @param _token: is EraSwap ERC20 Smart Contract Address
+  /// @param _deployer: is address of the deployer of PET Smart Contract
+  constructor(ERC20 _token, address _deployer) public {
     token = _token;
-    owner = _owner;
+    deployer = _deployer;
     petContract = msg.sender;
   }
 
+  /// @notice this function is used by well wishers to add funds to the fund bucket of PET
+  /// @dev ERC20 approve is required to be done for this contract earlier
+  /// @param _depositAmount: amount in exaES to deposit
   function addFunds(uint256 _depositAmount) public {
     token.transferFrom(msg.sender, address(this), _depositAmount);
 
+    /// @dev approving the PET Smart Contract in advance
     token.approve(petContract, _depositAmount);
+
+    emit FundsDeposited(msg.sender, _depositAmount);
   }
 
-  function withdrawFunds(bool _withdrawEverything, uint256 _withdrawlAmount) public onlyOwner {
+  /// @notice this function makes it possible for deployer to withdraw unallocated ES
+  function withdrawFunds(bool _withdrawEverything, uint256 _withdrawlAmount) public onlyDeployer {
     if(_withdrawEverything) {
       _withdrawlAmount = token.balanceOf(address(this));
     }
 
     token.transfer(msg.sender, _withdrawlAmount);
+
+    emit FundsWithdrawn(msg.sender, _withdrawlAmount);
   }
 }
 
+/// @title TimeAlly Personal EraSwap Teller Smart Contract
+/// @author The EraSwap Team
+/// @notice Stakes EraSwap tokens with staker
 contract TimeAllyPET {
   using SafeMath for uint256;
 
+  /// @notice data structure of a PET Plan
   struct PETPlan {
     bool isPlanActive;
     uint256 minimumMonthlyCommitmentAmount;
     uint256 monthlyBenefitFactorPerThousand;
   }
 
+  /// @notice data structure of a PET Plan
   struct PET {
     uint256 planId;
     uint256 initTimestamp;
@@ -85,25 +127,34 @@ contract TimeAllyPET {
     mapping(address => bool) appointees;
   }
 
-  address public owner;
+  /// @notice address storage of the maintainer / deployer
+  address public deployer;
+
+  /// @notice address storage of fundsBucket from which tokens to be pulled for giving benefits
   address public fundsBucket;
+
+  /// @notice address storage of Era Swap Token ERC20 Smart Contract
   ERC20 public token;
 
+  /// @dev selected for taking care of leap years such that 1 Year = 365.242 days holds
   uint256 constant EARTH_SECONDS_IN_MONTH = 2629744;
 
+  /// @notice storage for multiple PET plans
   PETPlan[] public petPlans;
 
+  /// @notice storage for PETs deployed by stakers
   mapping(address => PET[]) public pets;
 
+  /// @notice storage for prepaid Era Swaps available for any wallet address
   mapping(address => uint256) public prepaidES;
 
+  /// @notice event schema for monitoring new pets by stakers
   event NewPET (
     address indexed _staker,
     uint256 _petId
-    // uint256 _monthlyCommitmentAmount
   );
 
-  /// @notice event schema for monitoring deposits made by stakers to pets
+  /// @notice event schema for monitoring deposits made by stakers to their pets
   event NewDeposit (
     address indexed _staker,
     uint256 indexed _petId,
@@ -113,7 +164,7 @@ contract TimeAllyPET {
     address _depositedBy
   );
 
-  /// @notice event schema for monitoring pet benefit withdrawn by stakers
+  /// @notice event schema for monitoring pet annuity withdrawn by stakers
   event AnnuityWithdrawl (
     address indexed _staker,
     uint256 indexed _petId,
@@ -155,11 +206,13 @@ contract TimeAllyPET {
     address indexed _appointeeAddress
   );
 
-  modifier onlyOwner() {
-    require(msg.sender == owner, 'only deployer can call');
+  /// @notice restricting access to some functionalities to deployer
+  modifier onlyDeployer() {
+    require(msg.sender == deployer, 'only deployer can call');
     _;
   }
 
+  /// @notice restricting access of staker's PET to them and their pet nominees
   modifier meOrNominee(address _stakerAddress, uint256 _petId) {
     PET storage _pet = pets[_stakerAddress][_petId];
 
@@ -170,17 +223,25 @@ contract TimeAllyPET {
     _;
   }
 
+  /// @notice sets up TimeAllyPET contract when deployed and also deploys FundsBucket
+  /// @param _token: is EraSwap ERC20 Smart Contract Address
   constructor(ERC20 _token) public {
-    owner = msg.sender;
+    deployer = msg.sender;
     token = _token;
     fundsBucket = address(new FundsBucketPET(_token, msg.sender));
   }
 
+  /// @notice this function is used to add ES as prepaid for PET
+  /// @dev ERC20 approve needs to be done
+  /// @param _amount: ES to deposit
   function addToPrepaid(uint256 _amount) public {
     require(token.transferFrom(msg.sender, address(this), _amount));
     prepaidES[msg.sender] = prepaidES[msg.sender].add(_amount);
   }
 
+  /// @notice this function is used to send ES as prepaid for PET
+  /// @param _addresses: address array to send prepaid ES for PET
+  /// @param _amounts: prepaid ES for PET amounts to send to corresponding addresses
   function sendPrepaidESDifferent(
     address[] memory _addresses,
     uint256[] memory _amounts
@@ -191,10 +252,11 @@ contract TimeAllyPET {
     }
   }
 
+  /// @notice this function is used by deployer to create plans for new SIPs
   function createPETPlan(
     uint256 _minimumMonthlyCommitmentAmount,
     uint256 _monthlyBenefitFactorPerThousand
-  ) public onlyOwner {
+  ) public onlyDeployer {
     petPlans.push(PETPlan({
       isPlanActive: true,
       minimumMonthlyCommitmentAmount: _minimumMonthlyCommitmentAmount,
@@ -555,7 +617,7 @@ contract TimeAllyPET {
     uint256 _petId
   ) public view returns (uint256) {
     PET storage _pet = pets[_stakerAddress][_petId];
-    PETPlan storage _petPlan = petPlans[_pet.planId];
+    // PETPlan storage _petPlan = petPlans[_pet.planId];
 
     uint256 _totalDepositedIncludingPET;
 
@@ -698,9 +760,10 @@ contract TimeAllyPET {
 
 /// @dev For interface requirement
 abstract contract ERC20 {
-  function balanceOf(address tokenOwner) public view virtual returns (uint);
+  function balanceOf(address tokenDeployer) public view virtual returns (uint);
   function approve(address delegate, uint numTokens) public virtual returns (bool);
   function transfer(address _to, uint256 _value) public virtual returns (bool success);
   function transferFrom(address _from, address _to, uint256 _value) public virtual returns (bool success);
   function burn(uint256 value) public virtual;
+  function mou() public view virtual returns (uint256);
 }

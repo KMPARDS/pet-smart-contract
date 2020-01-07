@@ -35,20 +35,21 @@ const PETPlans = [
 
 let account1Balance = '80000';
 let fundsDeposit = '2000000';
-const petPlanId = 1;
+const monthlyCommitmentAmount = '600';
+const petPlanId = 0;
 const depositCases = [
   ['1000'],
   ['1000'],
   ['1000'],
   ['1000'],
-  [],
   ['1000'],
   ['1000'],
   ['1000'],
   ['1000'],
-  ['6000'],
-  ['2000'],
-  ['200']
+  ['1000'],
+  ['1000'],
+  ['1000'],
+  ['1000']
 ]
 // .map(member => [
 //   String(Math.random()* +PETPlans[petPlanId].minimumMonthlyCommitmentAmount * 2)
@@ -59,7 +60,7 @@ const depositCases = [
 // });
 
 
-
+console.log('monthlyCommitmentAmount:', monthlyCommitmentAmount);
 console.log('depositCases:');
 depositCases.forEach(monthCase => {
   let type = '';
@@ -149,17 +150,17 @@ describe('TimeAllyPET Contract', () => {
     });
 
     /// @dev this is second test case of this collection
-    it('owner, token values should be set properly while deploying', async() => {
+    it('deployer, token values should be set properly while deploying', async() => {
 
       /// @dev you access the value at storage with ethers.js library of our custom contract method called getValue defined in contracts/TimeAllyPET.sol
-      const ownerAddress = await timeallyPETInstance.functions.owner();
+      const deployerAddress = await timeallyPETInstance.functions.deployer();
       const tokenAddress = await timeallyPETInstance.functions.token();
 
       /// @dev then you compare it with your expectation value
       assert.equal(
-        ownerAddress,
+        deployerAddress,
         accounts[0],
-        'owner address used while deploying must be visible when get'
+        'deployer address used while deploying must be visible when get'
       );
       assert.equal(
         tokenAddress,
@@ -182,7 +183,7 @@ describe('TimeAllyPET Contract', () => {
     });
 
     PETPlans.forEach((plan, index) => {
-      it('owner should be able to create a new PET Plan of minimum comitment '+plan.minimumMonthlyCommitmentAmount+' ES', async() => {
+      it('deployer should be able to create a new PET Plan of minimum comitment '+plan.minimumMonthlyCommitmentAmount+' ES', async() => {
         const minimumMonthlyCommitmentAmount = ethers.utils.parseEther(plan.minimumMonthlyCommitmentAmount);
 
         await timeallyPETInstance.functions.createPETPlan(
@@ -212,7 +213,7 @@ describe('TimeAllyPET Contract', () => {
       addressLabel[fundsBucketAddress.toLowerCase()] = 'FUNDS_BUCKET';
     });
 
-    it(`owner gives allowance of ${fundsDeposit} ES to FundsBucketPET contract`, async() => {
+    it(`deployer gives allowance of ${fundsDeposit} ES to FundsBucketPET contract`, async() => {
       const approvalAmount = ethers.utils.parseEther(fundsDeposit);
       await parseERC20TransfersFromTx(esInstance.functions.approve(fundsBucketPETInstance.address, approvalAmount));
 
@@ -221,7 +222,7 @@ describe('TimeAllyPET Contract', () => {
       assert.ok(allowance.eq(approvalAmount), 'allowance should be set');
     });
 
-    it(`owner should be able to fund ${fundsDeposit} ES to the fundsBucket contract`, async() => {
+    it(`deployer should be able to fund ${fundsDeposit} ES to the fundsBucket contract`, async() => {
       const balanceBefore = await esInstance.functions.balanceOf(accounts[0]);
       const fundsDepositBefore = await esInstance.functions.allowance( fundsBucketPETInstance.address, timeallyPETInstance.address);
 
@@ -252,13 +253,13 @@ describe('TimeAllyPET Contract', () => {
 
   describe('TimeAllyPET New PET', async() => {
     /// @dev this is first test case of this collection
-    it('Account 1 should be able to create new PET', async() => {
+    it(`Account 1 should be able to create new PET with commitment ${monthlyCommitmentAmount} ES`, async() => {
       const _timeallyPETInstance = timeallyPETInstance.connect(provider.getSigner(accounts[1]));
 
       const planId = petPlanId;
 
       /// @dev you sign and submit a transaction to local blockchain (ganache) initialized on line 10.
-      await parseERC20TransfersFromTx(_timeallyPETInstance.functions.newPET(planId));
+      await parseERC20TransfersFromTx(_timeallyPETInstance.functions.newPET(planId, ethers.utils.parseEther(monthlyCommitmentAmount)));
 
       /// @dev now get the value at storage
       const pet = await timeallyPETInstance.functions.pets(accounts[1], 0);

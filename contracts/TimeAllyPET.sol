@@ -31,6 +31,13 @@ done;
 - add mou time machine for development purpose when deploying on testnet
 
 - 50% PET bounty on topup
+
+- add 12 month deposit together
+
+- add variable monthly commitment by user by selecting plan
+done
+
+- remove mou while deploying
 */
 
 /// @title Fund Bucket of TimeAlly Personal EraSwap Teller
@@ -117,6 +124,7 @@ contract TimeAllyPET {
   /// @notice data structure of a PET Plan
   struct PET {
     uint256 planId;
+    uint256 monthlyCommitmentAmount;
     uint256 initTimestamp;
     uint256 lastAnnuityWithdrawlMonthId;
     uint256 appointeeVotes;
@@ -127,7 +135,7 @@ contract TimeAllyPET {
     mapping(address => bool) appointees;
   }
 
-  /// @notice address storage of the maintainer / deployer
+  /// @notice address storage of the deployer
   address public deployer;
 
   /// @notice address storage of fundsBucket from which tokens to be pulled for giving benefits
@@ -151,7 +159,8 @@ contract TimeAllyPET {
   /// @notice event schema for monitoring new pets by stakers
   event NewPET (
     address indexed _staker,
-    uint256 _petId
+    uint256 _petId,
+    uint256 _monthlyCommitmentAmount
   );
 
   /// @notice event schema for monitoring deposits made by stakers to their pets
@@ -160,7 +169,7 @@ contract TimeAllyPET {
     uint256 indexed _petId,
     uint256 _monthId,
     uint256 _depositAmount,
-    uint256 _benefitAllocated, // check if this is really required
+    uint256 _benefitAllocated,
     address _depositedBy
   );
 
@@ -252,7 +261,7 @@ contract TimeAllyPET {
     }
   }
 
-  /// @notice this function is used by deployer to create plans for new SIPs
+  /// @notice this function is used by deployer to create plans for new PETs
   function createPETPlan(
     uint256 _minimumMonthlyCommitmentAmount,
     uint256 _monthlyBenefitFactorPerThousand
@@ -267,7 +276,8 @@ contract TimeAllyPET {
 
   /// in new PET, it is better to also take a first deposit
   function newPET(
-    uint256 _planId
+    uint256 _planId,
+    uint256 _monthlyCommitmentAmount
   ) public {
     require(
       petPlans[_planId].isPlanActive
@@ -276,6 +286,7 @@ contract TimeAllyPET {
 
     pets[msg.sender].push(PET({
       planId: _planId,
+      monthlyCommitmentAmount: _monthlyCommitmentAmount,
       initTimestamp: token.mou(),
       lastAnnuityWithdrawlMonthId: 0,
       appointeeVotes: 0,
@@ -285,7 +296,8 @@ contract TimeAllyPET {
     // emit an event here
     emit NewPET(
       msg.sender,
-      pets[msg.sender].length - 1
+      pets[msg.sender].length - 1,
+      _monthlyCommitmentAmount
     );
   }
 
@@ -297,49 +309,49 @@ contract TimeAllyPET {
     return pets[_stakerAddress][_petId].monthlyDepositAmount[_monthId];
   }
 
-  function getConsideredMonthlyDepositedAmount(
-    address _stakerAddress,
-    uint256 _petId,
-    uint256 _monthId
-  ) public view returns (uint256) {
-    PET storage _pet = pets[_stakerAddress][_petId];
-
-    return _getConsideredMonthlyDepositedAmount(_stakerAddress, _petId, _monthId - 1, _pet.monthlyDepositAmount[_monthId]);
-  }
-
-  function _getConsideredMonthlyDepositedAmount(
-    address _stakerAddress,
-    uint256 _petId,
-    uint256 _monthId,
-    uint256 _carryForward
-  ) private view returns (uint256) {
-    PET storage _pet = pets[_stakerAddress][_petId];
-    PETPlan storage _petPlan = petPlans[_pet.planId];
-
-    if(_monthId < 1 || 12 < _monthId) {
-      return _carryForward;
-    }
-
-    uint256 _thisMonthDepositAmount = _pet.monthlyDepositAmount[_monthId];
-
-    if(_thisMonthDepositAmount < _petPlan.minimumMonthlyCommitmentAmount) {
-      _carryForward = _carryForward.add(_thisMonthDepositAmount);
-    } else {
-      return _carryForward;
-    }
-
-    if(_carryForward >= _petPlan.minimumMonthlyCommitmentAmount) {
-      return _carryForward;
-    }
-
-
-    return _getConsideredMonthlyDepositedAmount(
-      _stakerAddress,
-      _petId,
-      _monthId - 1,
-      _carryForward
-    );
-  }
+  // function getConsideredMonthlyDepositedAmount(
+  //   address _stakerAddress,
+  //   uint256 _petId,
+  //   uint256 _monthId
+  // ) public view returns (uint256) {
+  //   PET storage _pet = pets[_stakerAddress][_petId];
+  //
+  //   return _getConsideredMonthlyDepositedAmount(_stakerAddress, _petId, _monthId - 1, _pet.monthlyDepositAmount[_monthId]);
+  // }
+  //
+  // function _getConsideredMonthlyDepositedAmount(
+  //   address _stakerAddress,
+  //   uint256 _petId,
+  //   uint256 _monthId,
+  //   uint256 _carryForward
+  // ) private view returns (uint256) {
+  //   PET storage _pet = pets[_stakerAddress][_petId];
+  //   PETPlan storage _petPlan = petPlans[_pet.planId];
+  //
+  //   if(_monthId < 1 || 12 < _monthId) {
+  //     return _carryForward;
+  //   }
+  //
+  //   uint256 _thisMonthDepositAmount = _pet.monthlyDepositAmount[_monthId];
+  //
+  //   if(_thisMonthDepositAmount < _petPlan.minimumMonthlyCommitmentAmount) {
+  //     _carryForward = _carryForward.add(_thisMonthDepositAmount);
+  //   } else {
+  //     return _carryForward;
+  //   }
+  //
+  //   if(_carryForward >= _petPlan.minimumMonthlyCommitmentAmount) {
+  //     return _carryForward;
+  //   }
+  //
+  //
+  //   return _getConsideredMonthlyDepositedAmount(
+  //     _stakerAddress,
+  //     _petId,
+  //     _monthId - 1,
+  //     _carryForward
+  //   );
+  // }
 
   function getDepositMonth(
     address _stakerAddress,
@@ -348,22 +360,25 @@ contract TimeAllyPET {
     return (token.mou() - pets[_stakerAddress][_petId].initTimestamp)/EARTH_SECONDS_IN_MONTH + 1;
   }
 
-  function _getTotalDepositedIncludingPET(uint256 _amount, uint256 _planId) private view returns (uint256) {
-    PETPlan storage _petPlan = petPlans[_planId];
+  function _getTotalDepositedIncludingPET(uint256 _amount, uint256 _monthlyCommitmentAmount) private pure returns (uint256) {
+    // PETPlan storage _petPlan = petPlans[_planId];
 
     uint256 _petAmount;
 
-    if(_amount > _petPlan.minimumMonthlyCommitmentAmount) {
-      uint256 _topupAmount = _amount.sub(_petPlan.minimumMonthlyCommitmentAmount);
-      _petAmount = _petPlan.minimumMonthlyCommitmentAmount.add(_topupAmount.div(2));
-    } else if(_amount >= _petPlan.minimumMonthlyCommitmentAmount.div(2)) {
+    if(_amount > _monthlyCommitmentAmount) {
+      uint256 _topupAmount = _amount.sub(_monthlyCommitmentAmount);
+      _petAmount = _monthlyCommitmentAmount.add(_topupAmount.div(2));
+    } else if(_amount >= _monthlyCommitmentAmount.div(2)) {
       _petAmount = _amount;
     }
 
     return _amount.add(_petAmount);
   }
 
-  function _getBenefitAllocationByDepositAmount(uint256 _amount, uint256 _planId, uint256 _depositMonth) private view returns (uint256) {
+  function _getBenefitAllocationByDepositAmount(PET storage _pet, uint256 _depositAmount, uint256 _depositMonth) private view returns (uint256) {
+    uint256 _planId = _pet.planId;
+    uint256 _amount = _depositAmount != 0 ? _depositAmount : _pet.monthlyDepositAmount[_depositMonth];
+    uint256 _monthlyCommitmentAmount = _pet.monthlyCommitmentAmount;
     PETPlan storage _petPlan = petPlans[_planId];
 
     // if amount is less than half then deposit amount is _amount
@@ -373,29 +388,24 @@ contract TimeAllyPET {
 
     uint256 _petAmount;
 
-    if(_amount > _petPlan.minimumMonthlyCommitmentAmount) {
-      uint256 _topupAmount = _amount.sub(_petPlan.minimumMonthlyCommitmentAmount);
-      _petAmount = _petPlan.minimumMonthlyCommitmentAmount.add(_topupAmount.div(2));
-    } else if(_amount >= _petPlan.minimumMonthlyCommitmentAmount.div(2)) {
+    if(_amount > _monthlyCommitmentAmount) {
+      uint256 _topupAmount = _amount.sub(_monthlyCommitmentAmount);
+      _petAmount = _monthlyCommitmentAmount.add(_topupAmount.div(2));
+    } else if(_amount >= _monthlyCommitmentAmount.div(2)) {
       _petAmount = _amount;
     }
 
-    uint256 _depositAmountIncludingPET = _getTotalDepositedIncludingPET(_amount, _planId);
+    uint256 _depositAmountIncludingPET = _getTotalDepositedIncludingPET(_amount, _monthlyCommitmentAmount);
 
     // power booster
     uint256 _benefitAllocation = _petAmount;
 
     // calculate the benefits in 5 years due to this deposit
-    if(_amount >= _petPlan.minimumMonthlyCommitmentAmount.div(2) || _depositMonth == 12) {
+    if(_amount >= _monthlyCommitmentAmount.div(2) || _depositMonth == 12) {
       _benefitAllocation = _benefitAllocation.add(
         _depositAmountIncludingPET.mul(_petPlan.monthlyBenefitFactorPerThousand).mul(5).div(1000)
       );
     }
-
-    // adding extra amount in power booster
-    // if(_amount >= _petPlan.minimumMonthlyCommitmentAmount) {
-    //   _benefitAllocation = _benefitAllocation.add(_amount);
-    // }
 
     return _benefitAllocation;
   }
@@ -409,7 +419,7 @@ contract TimeAllyPET {
     require(_depositAmount > 0, 'deposit amount should be non zero');
 
     PET storage _pet = pets[_stakerAddress][_petId];
-    PETPlan storage _petPlan = petPlans[_pet.planId];
+    // PETPlan storage _petPlan = petPlans[_pet.planId];
 
     uint256 _depositMonth = getDepositMonth(_stakerAddress, _petId);
 
@@ -430,7 +440,7 @@ contract TimeAllyPET {
 
     while(_previousMonth > 0) {
       if(0 < _pet.monthlyDepositAmount[_previousMonth]
-      && _pet.monthlyDepositAmount[_previousMonth] < _petPlan.minimumMonthlyCommitmentAmount.div(2)) {
+      && _pet.monthlyDepositAmount[_previousMonth] < _pet.monthlyCommitmentAmount.div(2)) {
         _updatedDepositAmount = _updatedDepositAmount.add(_pet.monthlyDepositAmount[_previousMonth]);
         _pet.monthlyDepositAmount[_previousMonth] = 0;
       }
@@ -439,13 +449,13 @@ contract TimeAllyPET {
 
     // also calculate old allocation, to adjust it in new allocation
     uint256 _oldBenefitAllocation = _getBenefitAllocationByDepositAmount(
-      _pet.monthlyDepositAmount[_depositMonth],
-      _pet.planId,
+      _pet,
+      0,
       _depositMonth
     );
     uint256 _extraBenefitAllocation = _getBenefitAllocationByDepositAmount(
+      _pet,
       _updatedDepositAmount,
-      _pet.planId,
       _depositMonth
     ).sub(_oldBenefitAllocation);
 
@@ -500,7 +510,7 @@ contract TimeAllyPET {
 
     for(uint256 _i = _startAnnuityMonthId; _i <= _endAnnuityMonthId; _i++) {
       uint256 _modulo = _i%12;
-      uint256 _depositAmountIncludingPET = _getTotalDepositedIncludingPET(_pet.monthlyDepositAmount[_modulo==0?12:_modulo], _pet.planId);
+      uint256 _depositAmountIncludingPET = _getTotalDepositedIncludingPET(_pet.monthlyDepositAmount[_modulo==0?12:_modulo], _pet.monthlyCommitmentAmount);
       // uint256 _depositAmountIncludingPET = _pet.monthlyDepositAmount[_modulo==0?12:_modulo];
 
       // if(_depositAmountIncludingPET >= _petPlan.minimumMonthlyCommitmentAmount.div(2)) {
@@ -594,13 +604,12 @@ contract TimeAllyPET {
     uint256 _petId
   ) private {
     PET storage _pet = pets[_stakerAddress][_petId];
-    PETPlan storage _petPlan = petPlans[_pet.planId];
+    // PETPlan storage _petPlan = petPlans[_pet.planId];
 
     uint256 _unachieveTargetCount;
-    // uint256 _target = _petPlan.minimumMonthlyCommitmentAmount.div(2);
 
     for(uint256 _i = 1; _i <= 12; _i++) {
-      if(_pet.monthlyDepositAmount[_i] < _petPlan.minimumMonthlyCommitmentAmount) {
+      if(_pet.monthlyDepositAmount[_i] < _pet.monthlyCommitmentAmount) {
         _unachieveTargetCount++;
       }
     }
@@ -628,7 +637,7 @@ contract TimeAllyPET {
       //   _depositAmountIncludingPET = _depositAmountIncludingPET.mul(2);
       // }
 
-      uint256 _depositAmountIncludingPET = _getTotalDepositedIncludingPET(_pet.monthlyDepositAmount[_i], _pet.planId);
+      uint256 _depositAmountIncludingPET = _getTotalDepositedIncludingPET(_pet.monthlyDepositAmount[_i], _pet.monthlyCommitmentAmount);
 
       _totalDepositedIncludingPET = _totalDepositedIncludingPET.add(_depositAmountIncludingPET);
     }
@@ -642,7 +651,7 @@ contract TimeAllyPET {
     uint256 _powerBoosterId
   ) public meOrNominee(_stakerAddress, _petId) {
     PET storage _pet = pets[_stakerAddress][_petId];
-    PETPlan storage _petPlan = petPlans[_pet.planId];
+    // PETPlan storage _petPlan = petPlans[_pet.planId];
 
     require(
       1 <= _powerBoosterId && _powerBoosterId <= 12
@@ -655,7 +664,7 @@ contract TimeAllyPET {
     );
 
     require(
-      _pet.monthlyDepositAmount[13 - _powerBoosterId] >= _petPlan.minimumMonthlyCommitmentAmount
+      _pet.monthlyDepositAmount[13 - _powerBoosterId] >= _pet.monthlyCommitmentAmount
       , 'target not achieved'
     );
 

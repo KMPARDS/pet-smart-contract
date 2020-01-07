@@ -33,10 +33,11 @@ const PETPlans = [
   {minimumMonthlyCommitmentAmount: '10000', monthlyBenefitFactorPerThousand: '120'}
 ];
 
-let account1Balance = '80000';
+let account1Balance = '0';
 let fundsDeposit = '2000000';
-const monthlyCommitmentAmount = '600';
-const petPlanId = 0;
+const monthlyCommitmentAmount = '1000';
+const petPlanId = 1;
+const makeLumSumDeposit = true;
 const depositCases = [
   ['1000'],
   ['1000'],
@@ -54,11 +55,11 @@ const depositCases = [
 // .map(member => [
 //   String(Math.random()* +PETPlans[petPlanId].minimumMonthlyCommitmentAmount * 2)
 // ]);
-// depositCases.forEach(depositCase => {
-//   account1Balance = String(+account1Balance + +depositCase[0]);
-//   if(+fundsDeposit < +account1Balance) fundsDeposit = account1Balance;
-// });
 
+depositCases.forEach(depositCase => {
+  account1Balance = String(+account1Balance + +depositCase[0]);
+  if(+fundsDeposit < +account1Balance) fundsDeposit = account1Balance;
+});
 
 console.log('monthlyCommitmentAmount:', monthlyCommitmentAmount);
 console.log('depositCases:');
@@ -73,6 +74,7 @@ depositCases.forEach(monthCase => {
   }
   console.log(`[ ${monthCase[0]} ] \t${type}`);
 });
+console.log('Total:',account1Balance);
 
 let nextPowerBoosterWithdrawlMonthId = 1;
 
@@ -279,88 +281,157 @@ describe('TimeAllyPET Contract', () => {
       );
     });
 
-    depositCases.forEach((monthDepositArray, index) => {
-      describe(`Depositing during month ${index+1}`, async() => {
-        monthDepositArray.forEach(partDepositAmount => {
-          describe(`Account 1 makes deposit of ${partDepositAmount} ES to their PET`, async() => {
-            it(`account 1 gives allowance of ${partDepositAmount} ES to PET contract`, async() => {
-              const _esInstance = esInstance.connect(provider.getSigner(accounts[1]));
+    if(makeLumSumDeposit) {
+      describe(`Making a lum sum deposit of ${account1Balance} ES`, async() => {
+        it(`account 1 gives allowance of ${account1Balance} ES to PET contract`, async() => {
+          const _esInstance = esInstance.connect(provider.getSigner(accounts[1]));
 
-              const approvalAmount = ethers.utils.parseEther(partDepositAmount);
-              await parseERC20TransfersFromTx(_esInstance.functions.approve(timeallyPETInstance.address, approvalAmount));
+          const approvalAmount = ethers.utils.parseEther(account1Balance);
+          await parseERC20TransfersFromTx(_esInstance.functions.approve(timeallyPETInstance.address, approvalAmount));
 
-              const allowance = await _esInstance.functions.allowance(accounts[1], timeallyPETInstance.address);
+          const allowance = await _esInstance.functions.allowance(accounts[1], timeallyPETInstance.address);
 
-              assert.ok(allowance.eq(approvalAmount), 'allowance should be set');
-            });
+          assert.ok(allowance.eq(approvalAmount), 'allowance should be set');
+        });
 
-            it('account 1 should be able to make a deposit', async() => {
-              const _timeallyPETInstance = timeallyPETInstance.connect(provider.getSigner(accounts[1]));
+        it('account 1 should be able to make a lum sum deposit', async() => {
+          const _timeallyPETInstance = timeallyPETInstance.connect(provider.getSigner(accounts[1]));
 
-              const balanceBefore = await esInstance.functions.balanceOf(accounts[1]);
-              const monthlyDepositAmountBefore = await timeallyPETInstance.functions.getMonthlyDepositedAmount(accounts[1],0,index+1);
-              // const allocatedFundsBefore = await timeallyPETInstance.functions.pendingBenefitAmountOfAllStakers();
+          const balanceBefore = await esInstance.functions.balanceOf(accounts[1]);
+          // const monthlyDepositAmountBefore = await timeallyPETInstance.functions.getMonthlyDepositedAmount(accounts[1],0,index+1);
+          // const allocatedFundsBefore = await timeallyPETInstance.functions.pendingBenefitAmountOfAllStakers();
 
-              const depositAmount = ethers.utils.parseEther(partDepositAmount);
-              const petId = 0;
+          const depositAmount = ethers.utils.parseEther(account1Balance);
+          const petId = 0;
 
-              let carryForwardAmount = ethers.constants.Zero;
-              let previousMonthId = index;
-              while(previousMonthId > 0) {
-                const previousMonthDeposit = await timeallyPETInstance.functions.getMonthlyDepositedAmount(accounts[1],0,previousMonthId);
-                // console.log('previousMonthDeposit',ethers.utils.formatEther(previousMonthDeposit));
-                if(ethers.utils.parseEther(PETPlans[petPlanId].minimumMonthlyCommitmentAmount).div(2).gt(previousMonthDeposit)) {
-                  carryForwardAmount = carryForwardAmount.add(previousMonthDeposit);
+          await parseERC20TransfersFromTx(_timeallyPETInstance.functions.makeLumSumDeposit(
+            accounts[1], petId, depositAmount, false
+          ));
+
+          // console.log('*carryForwardAmount',ethers.utils.formatEther(carryForwardAmount));
+
+          const balanceAfter = await esInstance.functions.balanceOf(accounts[1]);
+          // const monthlyDepositAmountAfter = await timeallyPETInstance.functions.getMonthlyDepositedAmount(accounts[1],0,index+1);
+          // const allocatedFundsAfter = await timeallyPETInstance.functions.pendingBenefitAmountOfAllStakers();
+
+
+          const pet = await timeallyPETInstance.functions.pets(accounts[1], 0);
+
+          console.log('Balance of PET contract:', ethers.utils.formatEther(await esInstance.functions.balanceOf(timeallyPETInstance.address)), 'ES');
+
+          // console.log('Allocation of funds from fundsDeposit (annuitity and power booster):', ethers.utils.formatEther(allocatedFundsAfter.sub(allocatedFundsBefore)));
+
+          for(let i = 0; i <= 13; i++) {
+            console.log(i, ethers.utils.formatEther(await timeallyPETInstance.functions.getMonthlyDepositedAmount(accounts[1],0,i)),
+            // ethers.utils.formatEther(await timeallyPETInstance.functions.getConsideredMonthlyDepositedAmount(accounts[1],0,i))
+            );
+          }
+
+          // assert.ok(
+          //   monthlyDepositAmountAfter.sub(monthlyDepositAmountBefore).eq(depositAmount),
+          //   'increase in monthly deposit should be deposit amount'
+          // );
+
+          assert.ok(
+            balanceBefore.sub(balanceAfter).eq(depositAmount),
+            'balance difference should be deposit amount'
+          );
+        });
+      });
+      describe('TimeTravel', async() => {
+        it(`Traveling to future by ${increaseSeconds*12} seconds / about one month`, async() => {
+          evm_increasedTime += increaseSeconds*12;
+          const timeIncreased = await provider.send('evm_increaseTime', [increaseSeconds*12]);
+
+          assert.ok(Math.abs(timeIncreased - evm_increasedTime) < 10, 'increase in time should be one month');
+        });
+      });
+    } else {
+      depositCases.forEach((monthDepositArray, index) => {
+        describe(`Depositing during month ${index+1}`, async() => {
+          monthDepositArray.forEach(partDepositAmount => {
+            describe(`Account 1 makes deposit of ${partDepositAmount} ES to their PET`, async() => {
+              it(`account 1 gives allowance of ${partDepositAmount} ES to PET contract`, async() => {
+                const _esInstance = esInstance.connect(provider.getSigner(accounts[1]));
+
+                const approvalAmount = ethers.utils.parseEther(partDepositAmount);
+                await parseERC20TransfersFromTx(_esInstance.functions.approve(timeallyPETInstance.address, approvalAmount));
+
+                const allowance = await _esInstance.functions.allowance(accounts[1], timeallyPETInstance.address);
+
+                assert.ok(allowance.eq(approvalAmount), 'allowance should be set');
+              });
+
+              it('account 1 should be able to make a deposit', async() => {
+                const _timeallyPETInstance = timeallyPETInstance.connect(provider.getSigner(accounts[1]));
+
+                const balanceBefore = await esInstance.functions.balanceOf(accounts[1]);
+                const monthlyDepositAmountBefore = await timeallyPETInstance.functions.getMonthlyDepositedAmount(accounts[1],0,index+1);
+                // const allocatedFundsBefore = await timeallyPETInstance.functions.pendingBenefitAmountOfAllStakers();
+
+                const depositAmount = ethers.utils.parseEther(partDepositAmount);
+                const petId = 0;
+
+                let carryForwardAmount = ethers.constants.Zero;
+                let previousMonthId = index;
+                while(previousMonthId > 0) {
+                  const previousMonthDeposit = await timeallyPETInstance.functions.getMonthlyDepositedAmount(accounts[1],0,previousMonthId);
+                  // console.log('previousMonthDeposit',ethers.utils.formatEther(previousMonthDeposit));
+                  if(ethers.utils.parseEther(PETPlans[petPlanId].minimumMonthlyCommitmentAmount).div(2).gt(previousMonthDeposit)) {
+                    carryForwardAmount = carryForwardAmount.add(previousMonthDeposit);
+                  }
+                  previousMonthId--;
                 }
-                previousMonthId--;
-              }
 
 
-              await parseERC20TransfersFromTx(_timeallyPETInstance.functions.makeDeposit(
-                accounts[1], petId, depositAmount, false
-              ));
+                await parseERC20TransfersFromTx(_timeallyPETInstance.functions.makeDeposit(
+                  accounts[1], petId, depositAmount, false
+                ));
 
-              console.log('*carryForwardAmount',ethers.utils.formatEther(carryForwardAmount));
+                console.log('*carryForwardAmount',ethers.utils.formatEther(carryForwardAmount));
 
-              const balanceAfter = await esInstance.functions.balanceOf(accounts[1]);
-              const monthlyDepositAmountAfter = await timeallyPETInstance.functions.getMonthlyDepositedAmount(accounts[1],0,index+1);
-              // const allocatedFundsAfter = await timeallyPETInstance.functions.pendingBenefitAmountOfAllStakers();
+                const balanceAfter = await esInstance.functions.balanceOf(accounts[1]);
+                const monthlyDepositAmountAfter = await timeallyPETInstance.functions.getMonthlyDepositedAmount(accounts[1],0,index+1);
+                // const allocatedFundsAfter = await timeallyPETInstance.functions.pendingBenefitAmountOfAllStakers();
 
 
-              const pet = await timeallyPETInstance.functions.pets(accounts[1], 0);
+                const pet = await timeallyPETInstance.functions.pets(accounts[1], 0);
 
-              console.log('Balance of PET contract:', ethers.utils.formatEther(await esInstance.functions.balanceOf(timeallyPETInstance.address)), 'ES');
+                console.log('Balance of PET contract:', ethers.utils.formatEther(await esInstance.functions.balanceOf(timeallyPETInstance.address)), 'ES');
 
-              // console.log('Allocation of funds from fundsDeposit (annuitity and power booster):', ethers.utils.formatEther(allocatedFundsAfter.sub(allocatedFundsBefore)));
+                // console.log('Allocation of funds from fundsDeposit (annuitity and power booster):', ethers.utils.formatEther(allocatedFundsAfter.sub(allocatedFundsBefore)));
 
-              for(let i = 0; i <= 13; i++) {
-                console.log(i, ethers.utils.formatEther(await timeallyPETInstance.functions.getMonthlyDepositedAmount(accounts[1],0,i)),
-                // ethers.utils.formatEther(await timeallyPETInstance.functions.getConsideredMonthlyDepositedAmount(accounts[1],0,i))
+                for(let i = 0; i <= 13; i++) {
+                  console.log(i, ethers.utils.formatEther(await timeallyPETInstance.functions.getMonthlyDepositedAmount(accounts[1],0,i)),
+                  // ethers.utils.formatEther(await timeallyPETInstance.functions.getConsideredMonthlyDepositedAmount(accounts[1],0,i))
+                  );
+                }
+
+                assert.ok(
+                  monthlyDepositAmountAfter.sub(carryForwardAmount).sub(monthlyDepositAmountBefore).eq(depositAmount),
+                  'increase in monthly deposit should be deposit amount'
                 );
-              }
 
-              assert.ok(
-                monthlyDepositAmountAfter.sub(carryForwardAmount).sub(monthlyDepositAmountBefore).eq(depositAmount),
-                'increase in monthly deposit should be deposit amount'
-              );
-
-              assert.ok(
-                balanceBefore.sub(balanceAfter).eq(depositAmount),
-                'balance difference should be deposit amount'
-              );
+                assert.ok(
+                  balanceBefore.sub(balanceAfter).eq(depositAmount),
+                  'balance difference should be deposit amount'
+                );
+              });
             });
           });
-        });
-        describe('TimeTravel', async() => {
-          it(`Traveling to future by ${increaseSeconds} seconds / about one month`, async() => {
-            evm_increasedTime += increaseSeconds;
-            const timeIncreased = await provider.send('evm_increaseTime', [increaseSeconds]);
+          describe('TimeTravel', async() => {
+            it(`Traveling to future by ${increaseSeconds} seconds / about one month`, async() => {
+              evm_increasedTime += increaseSeconds;
+              const timeIncreased = await provider.send('evm_increaseTime', [increaseSeconds]);
 
-            assert.ok(Math.abs(timeIncreased - evm_increasedTime) < 10, 'increase in time should be one month');
+              assert.ok(Math.abs(timeIncreased - evm_increasedTime) < 10, 'increase in time should be one month');
+            });
           });
         });
       });
-    });
+    }
+
+
 
     describe('Benefits', async() => {
       it('Seeing benefit', async() => {

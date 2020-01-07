@@ -7,16 +7,19 @@ import './SafeMath.sol';
 - add missing functionality
 
 - add events
+done but check once again
 
 - audit the contract
 
 - rearrange functions
 
 - add comments natspec
+done
 
 - put update plan status function
 
 - add burning event
+done
 
 - check all token transfer non zero txs
 
@@ -29,15 +32,20 @@ done;
 - consider adding a function in funds bucket contract for reusing it
 
 - add mou time machine for development purpose when deploying on testnet
+done
 
 - 50% PET bounty on topup
+done
 
 - add 12 month deposit together
+done
 
 - add variable monthly commitment by user by selecting plan
 done
 
 - remove mou while deploying
+
+- seperate every public non view function with memory logic in first part and storage logic in second part
 */
 
 /// @title Fund Bucket of TimeAlly Personal EraSwap Teller
@@ -55,7 +63,6 @@ contract FundsBucketPET {
   address public petContract;
 
   /// @notice event schema for monitoring funds added by donors
-  /// @dev this is parameter less
   event FundsDeposited(
     address _depositer,
     uint256 _depositAmount
@@ -156,6 +163,13 @@ contract TimeAllyPET {
   /// @notice storage for prepaid Era Swaps available for any wallet address
   mapping(address => uint256) public prepaidES;
 
+  /// @notice event schema for monitoring new pet plans
+  event NewPETPlan (
+    uint256 _minimumMonthlyCommitmentAmount,
+    uint256 _monthlyBenefitFactorPerThousand,
+    uint256 _petPlanId
+  );
+
   /// @notice event schema for monitoring new pets by stakers
   event NewPET (
     address indexed _staker,
@@ -190,6 +204,13 @@ contract TimeAllyPET {
     uint256 _powerBoosterId,
     uint256 _withdrawlAmount,
     address _withdrawnBy
+  );
+
+  /// @notice event schema for monitoring penalised power booster burning
+  event BoosterBurn (
+    address _staker,
+    uint256 _petId,
+    uint256 _burningAmount
   );
 
   /// @notice event schema for monitoring power booster withdrawn by stakers
@@ -244,11 +265,15 @@ contract TimeAllyPET {
   /// @dev ERC20 approve needs to be done
   /// @param _amount: ES to deposit
   function addToPrepaid(uint256 _amount) public {
-    require(token.transferFrom(msg.sender, address(this), _amount));
+    /// @notice transfering the tokens from user
+    token.transferFrom(msg.sender, address(this), _amount);
+
+    /// @notice then adding tokens to prepaidES
     prepaidES[msg.sender] = prepaidES[msg.sender].add(_amount);
   }
 
   /// @notice this function is used to send ES as prepaid for PET
+  /// @dev some ES already in prepaid required
   /// @param _addresses: address array to send prepaid ES for PET
   /// @param _amounts: prepaid ES for PET amounts to send to corresponding addresses
   function sendPrepaidESDifferent(
@@ -256,22 +281,31 @@ contract TimeAllyPET {
     uint256[] memory _amounts
   ) public {
     for(uint256 i = 0; i < _addresses.length; i++) {
+      /// @notice subtracting amount from sender prepaidES
       prepaidES[msg.sender] = prepaidES[msg.sender].sub(_amounts[i]);
+
+      /// @notice then incrementing the amount into receiver's prepaidES
       prepaidES[_addresses[i]] = prepaidES[_addresses[i]].add(_amounts[i]);
     }
   }
 
   /// @notice this function is used by deployer to create plans for new PETs
+  /// @param _minimumMonthlyCommitmentAmount: minimum PET monthly amount in exaES
+  /// @param _monthlyBenefitFactorPerThousand: this is per 1000; i.e 200 for 20%
   function createPETPlan(
     uint256 _minimumMonthlyCommitmentAmount,
     uint256 _monthlyBenefitFactorPerThousand
   ) public onlyDeployer {
+
+    /// @notice adding the petPlan to storage
     petPlans.push(PETPlan({
       isPlanActive: true,
       minimumMonthlyCommitmentAmount: _minimumMonthlyCommitmentAmount,
       monthlyBenefitFactorPerThousand: _monthlyBenefitFactorPerThousand
     }));
-    // add an event here
+
+    /// @notice emitting an event
+    emit NewPETPlan(_minimumMonthlyCommitmentAmount, _monthlyBenefitFactorPerThousand, petPlans.length - 1);
   }
 
   /// in new PET, it is better to also take a first deposit
@@ -279,11 +313,20 @@ contract TimeAllyPET {
     uint256 _planId,
     uint256 _monthlyCommitmentAmount
   ) public {
+    /// @notice enforcing that the plan should be active
     require(
       petPlans[_planId].isPlanActive
       , 'PET plan is not active'
     );
 
+    /// @notice enforcing that monthly commitment by the staker should be more than
+    ///   minimum monthly commitment in the selected plan
+    require(
+      _monthlyCommitmentAmount >= petPlans[_planId].minimumMonthlyCommitmentAmount
+      , 'low monthlyCommitmentAmount'
+    );
+
+    /// @notice adding the PET to staker's pets storage
     pets[msg.sender].push(PET({
       planId: _planId,
       monthlyCommitmentAmount: _monthlyCommitmentAmount,
@@ -293,7 +336,7 @@ contract TimeAllyPET {
       numberOfAppointees: 0
     }));
 
-    // emit an event here
+    /// @notice emiting an event
     emit NewPET(
       msg.sender,
       pets[msg.sender].length - 1,
@@ -301,6 +344,11 @@ contract TimeAllyPET {
     );
   }
 
+  /// @notice this function is used to retrive monthly deposit in a PET
+  /// @param _stakerAddress: address of staker who has PET
+  /// @param _petId: id of PET in staket address portfolio
+  /// @param _monthId: specify the month to deposit
+  /// @return deposit in a particular month
   function getMonthlyDepositedAmount(
     address _stakerAddress,
     uint256 _petId,
@@ -309,50 +357,10 @@ contract TimeAllyPET {
     return pets[_stakerAddress][_petId].monthlyDepositAmount[_monthId];
   }
 
-  // function getConsideredMonthlyDepositedAmount(
-  //   address _stakerAddress,
-  //   uint256 _petId,
-  //   uint256 _monthId
-  // ) public view returns (uint256) {
-  //   PET storage _pet = pets[_stakerAddress][_petId];
-  //
-  //   return _getConsideredMonthlyDepositedAmount(_stakerAddress, _petId, _monthId - 1, _pet.monthlyDepositAmount[_monthId]);
-  // }
-  //
-  // function _getConsideredMonthlyDepositedAmount(
-  //   address _stakerAddress,
-  //   uint256 _petId,
-  //   uint256 _monthId,
-  //   uint256 _carryForward
-  // ) private view returns (uint256) {
-  //   PET storage _pet = pets[_stakerAddress][_petId];
-  //   PETPlan storage _petPlan = petPlans[_pet.planId];
-  //
-  //   if(_monthId < 1 || 12 < _monthId) {
-  //     return _carryForward;
-  //   }
-  //
-  //   uint256 _thisMonthDepositAmount = _pet.monthlyDepositAmount[_monthId];
-  //
-  //   if(_thisMonthDepositAmount < _petPlan.minimumMonthlyCommitmentAmount) {
-  //     _carryForward = _carryForward.add(_thisMonthDepositAmount);
-  //   } else {
-  //     return _carryForward;
-  //   }
-  //
-  //   if(_carryForward >= _petPlan.minimumMonthlyCommitmentAmount) {
-  //     return _carryForward;
-  //   }
-  //
-  //
-  //   return _getConsideredMonthlyDepositedAmount(
-  //     _stakerAddress,
-  //     _petId,
-  //     _monthId - 1,
-  //     _carryForward
-  //   );
-  // }
-
+  /// @notice this function is used to get the current month of a PET
+  /// @param _stakerAddress: address of staker who has PET
+  /// @param _petId: id of PET in staket address portfolio
+  /// @return current month of a particular PET
   function getDepositMonth(
     address _stakerAddress,
     uint256 _petId
@@ -360,47 +368,64 @@ contract TimeAllyPET {
     return (token.mou() - pets[_stakerAddress][_petId].initTimestamp)/EARTH_SECONDS_IN_MONTH + 1;
   }
 
+  /// @notice this function is used by contract to get total deposited amount including PET
+  /// @param _amount: amount of ES which is deposited
+  /// @param _monthlyCommitmentAmount: commitment amount of staker
+  /// @return staker plus pet deposit amount based on acheivement of commitment
   function _getTotalDepositedIncludingPET(uint256 _amount, uint256 _monthlyCommitmentAmount) private pure returns (uint256) {
-    // PETPlan storage _petPlan = petPlans[_planId];
-
     uint256 _petAmount;
 
+    /// @notice if there is topup then add half of topup to pet
     if(_amount > _monthlyCommitmentAmount) {
       uint256 _topupAmount = _amount.sub(_monthlyCommitmentAmount);
       _petAmount = _monthlyCommitmentAmount.add(_topupAmount.div(2));
-    } else if(_amount >= _monthlyCommitmentAmount.div(2)) {
+    }
+    /// @notice otherwise if amount is atleast half of commitment and at most commitment
+    ///   then take staker amount as the pet amount
+    else if(_amount >= _monthlyCommitmentAmount.div(2)) {
       _petAmount = _amount;
     }
 
+    /// @notice finally sum staker amount and pet amount and return it
     return _amount.add(_petAmount);
   }
 
-  function _getBenefitAllocationByDepositAmount(PET storage _pet, uint256 _depositAmount, uint256 _depositMonth) private view returns (uint256) {
+  /// @notice this function is used by contract to calculate benefit allocation when
+  ///   a staker makes a deposit
+  /// @param _pet: this is a reference to staker's pet storage
+  /// @param _depositAmount: this is amount deposited by staker
+  /// @param _depositMonth: this is month at which deposit takes place
+  /// @return benefit amount to be allocated due to the deposit
+  function _getBenefitAllocationByDepositAmount(
+    PET storage _pet,
+    uint256 _depositAmount,
+    uint256 _depositMonth
+  ) private view returns (uint256) {
     uint256 _planId = _pet.planId;
     uint256 _amount = _depositAmount != 0 ? _depositAmount : _pet.monthlyDepositAmount[_depositMonth];
     uint256 _monthlyCommitmentAmount = _pet.monthlyCommitmentAmount;
     PETPlan storage _petPlan = petPlans[_planId];
 
-    // if amount is less than half then deposit amount is _amount
-    // if amount is between half to commitment then amount is 2 * _amount
-    // if amount is above commitment then amount + commitment + amount / 2
-    // calculate _depositAmountIncludingPET give annuity on this amount
-
     uint256 _petAmount;
 
+    /// @notice if amount is above commitment then amount + commitment + amount / 2
     if(_amount > _monthlyCommitmentAmount) {
       uint256 _topupAmount = _amount.sub(_monthlyCommitmentAmount);
       _petAmount = _monthlyCommitmentAmount.add(_topupAmount.div(2));
-    } else if(_amount >= _monthlyCommitmentAmount.div(2)) {
+    }
+    /// @notice otherwise if amount is atleast half of commitment and at most commitment
+    ///   then take staker amount as the pet amount
+    else if(_amount >= _monthlyCommitmentAmount.div(2)) {
       _petAmount = _amount;
     }
 
+    /// @notice getting total deposit for the month including pet
     uint256 _depositAmountIncludingPET = _getTotalDepositedIncludingPET(_amount, _monthlyCommitmentAmount);
 
-    // power booster
+    /// @dev starting with allocating power booster amount due to this deposit amount
     uint256 _benefitAllocation = _petAmount;
 
-    // calculate the benefits in 5 years due to this deposit
+    /// @notice calculating the benefits in 5 years due to this deposit
     if(_amount >= _monthlyCommitmentAmount.div(2) || _depositMonth == 12) {
       _benefitAllocation = _benefitAllocation.add(
         _depositAmountIncludingPET.mul(_petPlan.monthlyBenefitFactorPerThousand).mul(5).div(1000)
@@ -410,19 +435,30 @@ contract TimeAllyPET {
     return _benefitAllocation;
   }
 
+  /// @notice this function is used by stakers to make deposits to their PETs
+  /// @dev ERC20 approve is required to be done for this contract earlier if prepaidES
+  ///   is not selected, enough funds must be there in the funds bucket contract
+  ///   and also deposit can be done by nominee
+  /// @param _stakerAddress: address of staker who has a PET
+  /// @param _petId: id of PET in staker address portfolio
+  /// @param _depositAmount: amount to deposit
+  /// @param _usePrepaidES: should prepaidES be used
   function makeDeposit(
     address _stakerAddress,
     uint256 _petId,
     uint256 _depositAmount,
     bool _usePrepaidES
   ) public {
+    /// @notice check if non zero deposit
     require(_depositAmount > 0, 'deposit amount should be non zero');
 
+    /// @notice get the storage reference of staker's PET
     PET storage _pet = pets[_stakerAddress][_petId];
-    // PETPlan storage _petPlan = petPlans[_pet.planId];
 
+    /// @notice calculate the deposit month based on time
     uint256 _depositMonth = getDepositMonth(_stakerAddress, _petId);
 
+    /// @notice enforce no deposits after 12 months
     require(_depositMonth <= 12, 'cannot deposit after accumulation period');
 
     if(_usePrepaidES) {
@@ -433,11 +469,11 @@ contract TimeAllyPET {
       token.transferFrom(msg.sender, address(this), _depositAmount);
     }
 
+    /// @notice calculate new deposit amount for the storage
     uint256 _updatedDepositAmount = _pet.monthlyDepositAmount[_depositMonth].add(_depositAmount);
 
-    // uint256 _carryForwardAmount;
+    /// @notice carryforward small deposits in previous months
     uint256 _previousMonth = _depositMonth - 1;
-
     while(_previousMonth > 0) {
       if(0 < _pet.monthlyDepositAmount[_previousMonth]
       && _pet.monthlyDepositAmount[_previousMonth] < _pet.monthlyCommitmentAmount.div(2)) {
@@ -447,7 +483,7 @@ contract TimeAllyPET {
       _previousMonth -= 1;
     }
 
-    // also calculate old allocation, to adjust it in new allocation
+    /// @notice calculate old allocation, to adjust it in new allocation
     uint256 _oldBenefitAllocation = _getBenefitAllocationByDepositAmount(
       _pet,
       0,
@@ -459,16 +495,13 @@ contract TimeAllyPET {
       _depositMonth
     ).sub(_oldBenefitAllocation);
 
-    // here alocate funds for paying annuitity and power booster.
-    // also if fund crosses commitment then alocate more funds
-
+    /// @notice pull funds from funds bucket
     token.transferFrom(fundsBucket, address(this), _extraBenefitAllocation);
 
-    // pendingBenefitAmountOfAllStakers = pendingBenefitAmountOfAllStakers.add(_extraBenefitAllocation.add(_depositAmount));
-
-    /// @dev recording the deposit
+    /// @notice recording the deposit by updating the value
     _pet.monthlyDepositAmount[_depositMonth] = _updatedDepositAmount;
 
+    /// @notice emitting an event
     emit NewDeposit(
       _stakerAddress,
       _petId,
@@ -479,50 +512,108 @@ contract TimeAllyPET {
     );
   }
 
-  // function getMonthlyBenefitAmount(
-  //   address _stakerAddress,
-  //   uint256 _petId,
-  //   uint256 _monthId
-  // ) public view returns (uint256) {
-  //   PET storage _pet = pets[_stakerAddress][_petId];
-  //   PETPlan storage _petPlan = petPlans[_pet.planId];
-  //
-  //   uint256 _modulo = _monthId%12;
-  //   uint256 _totalDepositAmount = _pet.monthlyDepositAmount[_modulo==0?12:_modulo];
-  //
-  //   if(_totalDepositAmount >= _petPlan.minimumMonthlyCommitmentAmount) {
-  //     _totalDepositAmount = _totalDepositAmount.mul(2);
-  //   }
-  //
-  //   return _totalDepositAmount.mul(_petPlan.monthlyBenefitFactorPerThousand).div(1000);
-  // }
+  /// @notice this function is used by stakers to make lum sum deposit
+  /// @dev lum sum deposit is possible in the first month in a fresh PET
+  /// @param _stakerAddress: address of staker who has a PET
+  /// @param _petId: id of PET in staker address portfolio
+  /// @param _totalDepositAmount: total amount to deposit for 12 months
+  /// @param _usePrepaidES: should prepaidES be used
+  function makeLumSumDeposit(
+    address _stakerAddress,
+    uint256 _petId,
+    uint256 _totalDepositAmount,
+    bool _usePrepaidES
+  ) public {
+    /// @notice check if non zero deposit
+    require(_totalDepositAmount > 0, 'deposit amount should be non zero');
 
+    /// @notice get the reference of staker's PET
+    PET storage _pet = pets[_stakerAddress][_petId];
+
+    /// @notice enforce only fresh pets
+    require(_pet.monthlyDepositAmount[1] == 0, 'allowed only in fresh pets');
+
+    /// @notice calculate deposit month based on time and enforce first month
+    uint256 _depositMonth = getDepositMonth(_stakerAddress, _petId);
+    require(_depositMonth == 1, 'allowed only in first month');
+
+    /// @notice calculate monthly deposit amount
+    uint256 _monthlyDepositAmount = _totalDepositAmount.div(12);
+
+    /// @notice check if single monthly deposit amount is at least commitment
+    require(
+      _monthlyDepositAmount >= _pet.monthlyCommitmentAmount
+      , 'deposit not crossing commitment'
+    );
+
+    /// @notice calculate benefit for a single month
+    uint256 _benefitAllocationForSingleMonth = _getBenefitAllocationByDepositAmount(
+      _pet,
+      _monthlyDepositAmount,
+      1
+    );
+
+    if(_usePrepaidES) {
+      /// @notice subtracting prepaidES from staker
+      prepaidES[msg.sender] = prepaidES[msg.sender].sub(_totalDepositAmount);
+    } else {
+      /// @notice transfering staker tokens to PET contract
+      token.transferFrom(msg.sender, address(this), _totalDepositAmount);
+    }
+
+    /// @notice pull funds from funds bucket
+    token.transferFrom(fundsBucket, address(this), _benefitAllocationForSingleMonth.mul(12));
+
+    for(uint256 _monthId = 1; _monthId <= 12; _monthId++) {
+      /// @notice mark deposits in all the months
+      _pet.monthlyDepositAmount[_monthId] = _monthlyDepositAmount;
+
+      /// @notice emit events
+      emit NewDeposit(
+        _stakerAddress,
+        _petId,
+        _monthId,
+        _monthlyDepositAmount,
+        _benefitAllocationForSingleMonth,
+        msg.sender
+      );
+    }
+  }
+
+  /// @notice this function is used to get total annuity benefits between two months
+  /// @param _stakerAddress: address of staker who has a PET
+  /// @param _petId: id of PET in staker address portfolio
+  /// @param _startAnnuityMonthId: this is the month (inclusive) to start from
+  /// @param _endAnnuityMonthId: this is the month (inclusive) to stop at
   function getSumOfMonthlyAnnuity(
     address _stakerAddress,
     uint256 _petId,
     uint256 _startAnnuityMonthId,
     uint256 _endAnnuityMonthId
   ) public view returns (uint256) {
+    /// @notice get the storage references of staker's PET and Plan
     PET storage _pet = pets[_stakerAddress][_petId];
     PETPlan storage _petPlan = petPlans[_pet.planId];
 
-    uint256 _sumOfAnnuity;
+    uint256 _totalDeposits;
 
+    /// @notice calculating both deposits for every month and adding it
     for(uint256 _i = _startAnnuityMonthId; _i <= _endAnnuityMonthId; _i++) {
       uint256 _modulo = _i%12;
       uint256 _depositAmountIncludingPET = _getTotalDepositedIncludingPET(_pet.monthlyDepositAmount[_modulo==0?12:_modulo], _pet.monthlyCommitmentAmount);
-      // uint256 _depositAmountIncludingPET = _pet.monthlyDepositAmount[_modulo==0?12:_modulo];
 
-      // if(_depositAmountIncludingPET >= _petPlan.minimumMonthlyCommitmentAmount.div(2)) {
-      //   _depositAmountIncludingPET = _depositAmountIncludingPET.mul(2);
-      // }
-
-      _sumOfAnnuity = _sumOfAnnuity.add(_depositAmountIncludingPET);
+      _totalDeposits = _totalDeposits.add(_depositAmountIncludingPET);
     }
 
-    return _sumOfAnnuity.mul(_petPlan.monthlyBenefitFactorPerThousand).div(1000);
+    /// @notice calculating annuity from total both deposits done
+    return _totalDeposits.mul(_petPlan.monthlyBenefitFactorPerThousand).div(1000);
   }
 
+  /// @notice this function is used by contract to get nominee's allowed timestamp
+  /// @param _stakerAddress: address of staker who has a PET
+  /// @param _petId: id of PET in staker address portfolio
+  /// @param _annuityMonthId: this is the month for which timestamp to find
+  /// @return nominee allowed timestamp
   function _getNomineeAllowedTimestamp(
     address _stakerAddress,
     uint256 _petId,
@@ -531,6 +622,7 @@ contract TimeAllyPET {
     PET storage _pet = pets[_stakerAddress][_petId];
     uint256 _allowedTimestamp = _pet.initTimestamp + (12 + _annuityMonthId - 1) * EARTH_SECONDS_IN_MONTH;
 
+    /// @notice if tranasction sender is not the staker, then more delay to _allowedTimestamp
     if(msg.sender != _stakerAddress) {
       if(_pet.appointeeVotes > _pet.numberOfAppointees.div(2)) {
         _allowedTimestamp += EARTH_SECONDS_IN_MONTH * 6;
@@ -542,6 +634,10 @@ contract TimeAllyPET {
     return _allowedTimestamp;
   }
 
+  /// @notice this function is used to withdraw annuity benefits
+  /// @param _stakerAddress: address of staker who has a PET
+  /// @param _petId: id of PET in staker address portfolio
+  /// @param _endAnnuityMonthId: this is the month upto which benefits to be withdrawn
   function withdrawAnnuity(
     address _stakerAddress,
     uint256 _petId,
@@ -549,25 +645,29 @@ contract TimeAllyPET {
   ) public meOrNominee(_stakerAddress, _petId) {
     PET storage _pet = pets[_stakerAddress][_petId];
     uint256 _lastAnnuityWithdrawlMonthId = _pet.lastAnnuityWithdrawlMonthId;
-    // uint256 _currentAnnuityMonthId = ((token.mou() - _pet.initTimestamp).sub(12)) / EARTH_SECONDS_IN_MONTH;
 
+    /// @notice enforcing withdrawls only once
     require(
       _lastAnnuityWithdrawlMonthId < _endAnnuityMonthId
       , 'start should be before end'
     );
 
+    /// @notice enforcing only 60 withdrawls
     require(
       _endAnnuityMonthId <= 60
       , 'only 60 Annuity withdrawls'
     );
 
+    /// @notice calculating allowed timestamp
     uint256 _allowedTimestamp = _getNomineeAllowedTimestamp(_stakerAddress, _petId, _endAnnuityMonthId);
 
+    /// @notice enforcing withdrawls only after allowed timestamp
     require(
       token.mou() >= _allowedTimestamp
       , 'cannot withdraw early'
     );
 
+    /// @notice calculating sum of annuity of the months
     uint256 _annuityBenefit = getSumOfMonthlyAnnuity(
       _stakerAddress,
       _petId,
@@ -575,20 +675,20 @@ contract TimeAllyPET {
       _endAnnuityMonthId
     );
 
+    /// @notice updating last withdrawl month
     _pet.lastAnnuityWithdrawlMonthId = _endAnnuityMonthId;
 
+    /// @notice burning penalised power booster tokens in the first annuity withdrawl
     if(_lastAnnuityWithdrawlMonthId == 0) {
       _burnPenalisedPowerBoosterTokens(_stakerAddress, _petId);
     }
 
+    /// @notice transfering the annuity to withdrawer (staker or nominee)
     if(_annuityBenefit != 0) {
-      // sub pending benefits
-      // pendingBenefitAmountOfAllStakers = pendingBenefitAmountOfAllStakers.sub(_annuityBenefit);
-
       token.transfer(msg.sender, _annuityBenefit);
     }
 
-    // emit an event here
+    // @notice emitting an event
     emit AnnuityWithdrawl(
       _stakerAddress,
       _petId,
@@ -599,15 +699,19 @@ contract TimeAllyPET {
     );
   }
 
+  /// @notice this function is used internally to burn penalised booster tokens
+  /// @param _stakerAddress: address of staker who has a PET
+  /// @param _petId: id of PET in staker address portfolio
   function _burnPenalisedPowerBoosterTokens(
     address _stakerAddress,
     uint256 _petId
   ) private {
+    /// @notice get the storage references of staker's PET
     PET storage _pet = pets[_stakerAddress][_petId];
-    // PETPlan storage _petPlan = petPlans[_pet.planId];
 
     uint256 _unachieveTargetCount;
 
+    /// @notice calculating number of unacheived targets
     for(uint256 _i = 1; _i <= 12; _i++) {
       if(_pet.monthlyDepositAmount[_i] < _pet.monthlyCommitmentAmount) {
         _unachieveTargetCount++;
@@ -616,27 +720,29 @@ contract TimeAllyPET {
 
     uint256 _powerBoosterAmount = calculatePowerBoosterAmount(_stakerAddress, _petId);
 
-    token.burn(_powerBoosterAmount.mul(_unachieveTargetCount));
+    /// @notice burning the unacheived power boosters
+    uint256 _burningAmount = _powerBoosterAmount.mul(_unachieveTargetCount);
+    token.burn(_burningAmount);
 
-    //add burn event here
+    // @notice emitting an event
+    emit BoosterBurn(_stakerAddress, _petId, _burningAmount);
   }
 
+  /// @notice calculating power booster amount
+  /// @param _stakerAddress: address of staker who has PET
+  /// @param _petId: id of PET in staket address portfolio
+  /// @return single power booster amount
   function calculatePowerBoosterAmount(
     address _stakerAddress,
     uint256 _petId
   ) public view returns (uint256) {
+    /// @notice get the storage reference of staker's PET
     PET storage _pet = pets[_stakerAddress][_petId];
-    // PETPlan storage _petPlan = petPlans[_pet.planId];
 
     uint256 _totalDepositedIncludingPET;
 
+    /// @notice calculating total deposited by staker and pet in all 12 months
     for(uint256 _i = 1; _i <= 12; _i++) {
-      // uint256 _depositAmountIncludingPET = _pet.monthlyDepositAmount[_i];
-      //
-      // if(_depositAmountIncludingPET >= _petPlan.minimumMonthlyCommitmentAmount.div(2)) {
-      //   _depositAmountIncludingPET = _depositAmountIncludingPET.mul(2);
-      // }
-
       uint256 _depositAmountIncludingPET = _getTotalDepositedIncludingPET(_pet.monthlyDepositAmount[_i], _pet.monthlyCommitmentAmount);
 
       _totalDepositedIncludingPET = _totalDepositedIncludingPET.add(_depositAmountIncludingPET);
@@ -645,45 +751,55 @@ contract TimeAllyPET {
     return _totalDepositedIncludingPET.div(12);
   }
 
+  /// @notice this function is used by staker to withdraw power booster
+  /// @param _stakerAddress: address of staker who has a PET
+  /// @param _petId: id of PET in staker address portfolio
+  /// @param _powerBoosterId: this is serial of power booster
   function withdrawPowerBooster(
     address _stakerAddress,
     uint256 _petId,
     uint256 _powerBoosterId
   ) public meOrNominee(_stakerAddress, _petId) {
     PET storage _pet = pets[_stakerAddress][_petId];
-    // PETPlan storage _petPlan = petPlans[_pet.planId];
 
+    /// @notice enforcing 12 power booster withdrawls
     require(
       1 <= _powerBoosterId && _powerBoosterId <= 12
       , 'id should be in range'
     );
 
+    /// @notice enforcing power booster withdrawl once
     require(
       !_pet.isPowerBoosterWithdrawn[_powerBoosterId]
       , 'booster already withdrawn'
     );
 
+    /// @notice enforcing target to be acheived
     require(
       _pet.monthlyDepositAmount[13 - _powerBoosterId] >= _pet.monthlyCommitmentAmount
       , 'target not achieved'
     );
 
+    /// @notice calculating allowed timestamp based on time and nominee
     uint256 _allowedTimestamp = _getNomineeAllowedTimestamp(_stakerAddress, _petId, _powerBoosterId*5+1);
 
+    /// @notice enforcing withdrawl after _allowedTimestamp
     require(
       token.mou() >= _allowedTimestamp
       , 'cannot withdraw early'
     );
 
+    /// @notice calculating power booster amount
     uint256 _powerBoosterAmount = calculatePowerBoosterAmount(_stakerAddress, _petId);
 
+    /// @notice marking power booster as withdrawn
+    _pet.isPowerBoosterWithdrawn[_powerBoosterId] = true;
+
     if(_powerBoosterAmount > 0) {
-      _pet.isPowerBoosterWithdrawn[_powerBoosterId] = true;
-
-      // pendingBenefitAmountOfAllStakers = pendingBenefitAmountOfAllStakers.sub(_powerBoosterAmount);
-
+      /// @notice sending the power booster amount to withdrawer (staker or nominee)
       token.transfer(msg.sender, _powerBoosterAmount);
 
+      /// @notice emitting an event
       emit PowerBoosterWithdrawl(
         _stakerAddress,
         _petId,
@@ -694,6 +810,11 @@ contract TimeAllyPET {
     }
   }
 
+  /// @notice this function is used to view nomination
+  /// @param _stakerAddress: address of initiater of this PET.
+  /// @param _petId: id of PET in staker portfolio.
+  /// @param _nomineeAddress: eth wallet address of nominee.
+  /// @return tells whether this address is a nominee or not
   function viewNomination(
     address _stakerAddress,
     uint256 _petId,
@@ -702,6 +823,11 @@ contract TimeAllyPET {
     return pets[_stakerAddress][_petId].nominees[_nomineeAddress];
   }
 
+  /// @notice this function is used to view appointation
+  /// @param _stakerAddress: address of initiater of this PET.
+  /// @param _petId: id of PET in staker portfolio.
+  /// @param _appointeeAddress: eth wallet address of apointee.
+  /// @return tells whether this address is a appointee or not
   function viewAppointation(
     address _stakerAddress,
     uint256 _petId,
@@ -710,6 +836,10 @@ contract TimeAllyPET {
     return pets[_stakerAddress][_petId].appointees[_appointeeAddress];
   }
 
+  /// @notice this function is used by appointee to vote that nominees can withdraw early
+  /// @dev need to be appointee, set by staker themselves
+  /// @param _stakerAddress: address of initiater of this PET.
+  /// @param _petId: id of PET in staker portfolio.
   function appointeeVote(
     address _stakerAddress,
     uint256 _petId
@@ -731,6 +861,10 @@ contract TimeAllyPET {
     emit AppointeeVoted(_stakerAddress, _petId, msg.sender);
   }
 
+  /// @notice this function is used to update appointee status of a wallet address in PET
+  /// @param _petId: id of PET in staker portfolio.
+  /// @param _appointeeAddress: eth wallet address of appointee.
+  /// @param _newAppointeeStatus: true or false, should this have appointee rights or not.
   function toogleAppointee(
     uint256 _petId,
     address _appointeeAddress,
@@ -753,6 +887,10 @@ contract TimeAllyPET {
     emit AppointeeUpdated(msg.sender, _petId, _appointeeAddress, _newAppointeeStatus);
   }
 
+  /// @notice this function is used to update nominee status of a wallet address in PET
+  /// @param _petId: id of PET in staker portfolio.
+  /// @param _nomineeAddress: eth wallet address of nominee.
+  /// @param _newNomineeStatus: true or false, whether this should be a nominee or not.
   function toogleNominee(
     uint256 _petId,
     address _nomineeAddress,

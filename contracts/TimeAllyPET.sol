@@ -4,13 +4,18 @@ import './SafeMath.sol';
 
 /*
 
+
+- remove mou while deploying
+
+- seperate every public non view function with memory logic in first part and storage logic in second part
+
+- audit the contract
+
 - add missing functionality
 done checked with all sip functionality
 
 - add events
 done but check once again
-
-- audit the contract
 
 - rearrange functions
 done
@@ -34,6 +39,7 @@ done; to be tested
 done;
 
 - consider adding a function in funds bucket contract for reusing it
+not doing this; if in future PET Will be needed for redeployment, then seperate fundsBucket deployed
 
 - add mou time machine for development purpose when deploying on testnet
 done
@@ -47,11 +53,8 @@ done
 - add variable monthly commitment by user by selecting plan
 done
 
-- remove mou while deploying
-
-- seperate every public non view function with memory logic in first part and storage logic in second part
-
 - check if every function has at least two uses
+done
 
 - contract under preferred line length
 done

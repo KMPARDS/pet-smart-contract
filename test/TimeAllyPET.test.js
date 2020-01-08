@@ -37,7 +37,7 @@ let account1Balance = '0';
 let fundsDeposit = '2000000';
 const monthlyCommitmentAmount = '1000';
 const petPlanId = 1;
-const makeLumSumDeposit = true;
+const makeLumSumDeposit = false;
 const depositCases = [
   ['1000'],
   ['1000'],

@@ -5,6 +5,7 @@ import './SafeMath.sol';
 /*
 
 - add missing functionality
+done checked with all sip functionality
 
 - add events
 done but check once again
@@ -17,6 +18,7 @@ done but check once again
 done
 
 - put update plan status function
+done
 
 - add burning event
 done
@@ -46,11 +48,16 @@ done
 - remove mou while deploying
 
 - seperate every public non view function with memory logic in first part and storage logic in second part
+
+- check if every function has at least two uses
+
+- contract under preferred line length
+done
 */
 
 /// @title Fund Bucket of TimeAlly Personal EraSwap Teller
 /// @author The EraSwap Team
-/// @notice The benefits for PET Smart Contract are transparently stored in advance in this contract
+/// @notice The returns for PET Smart Contract are transparently stored in advance in this contract
 contract FundsBucketPET {
 
   /// @notice address of the maintainer
@@ -114,6 +121,7 @@ contract FundsBucketPET {
     emit FundsWithdrawn(msg.sender, _withdrawlAmount);
   }
 }
+
 
 /// @title TimeAlly Personal EraSwap Teller Smart Contract
 /// @author The EraSwap Team
@@ -305,8 +313,21 @@ contract TimeAllyPET {
     }));
 
     /// @notice emitting an event
-    emit NewPETPlan(_minimumMonthlyCommitmentAmount, _monthlyBenefitFactorPerThousand, petPlans.length - 1);
+    emit NewPETPlan(
+      _minimumMonthlyCommitmentAmount,
+      _monthlyBenefitFactorPerThousand,
+      petPlans.length - 1
+    );
   }
+
+  /// @notice this function is used by deployer to disable or re-enable a pet plan
+  /// @dev pets already initiated by a plan will continue only new will be restricted
+  /// @param _planId: select a plan to make it inactive
+  /// @param _newStatus: true or false.
+  function updatePlanStatus(uint256 _planId, bool _newStatus) public onlyDeployer {
+    petPlans[_planId].isPlanActive = _newStatus;
+  }
+
 
   /// in new PET, it is better to also take a first deposit
   function newPET(
@@ -372,7 +393,10 @@ contract TimeAllyPET {
   /// @param _amount: amount of ES which is deposited
   /// @param _monthlyCommitmentAmount: commitment amount of staker
   /// @return staker plus pet deposit amount based on acheivement of commitment
-  function _getTotalDepositedIncludingPET(uint256 _amount, uint256 _monthlyCommitmentAmount) private pure returns (uint256) {
+  function _getTotalDepositedIncludingPET(
+    uint256 _amount,
+    uint256 _monthlyCommitmentAmount
+  ) private pure returns (uint256) {
     uint256 _petAmount;
 
     /// @notice if there is topup then add half of topup to pet
@@ -402,7 +426,8 @@ contract TimeAllyPET {
     uint256 _depositMonth
   ) private view returns (uint256) {
     uint256 _planId = _pet.planId;
-    uint256 _amount = _depositAmount != 0 ? _depositAmount : _pet.monthlyDepositAmount[_depositMonth];
+    uint256 _amount = _depositAmount != 0
+      ? _depositAmount : _pet.monthlyDepositAmount[_depositMonth];
     uint256 _monthlyCommitmentAmount = _pet.monthlyCommitmentAmount;
     PETPlan storage _petPlan = petPlans[_planId];
 
@@ -420,7 +445,10 @@ contract TimeAllyPET {
     }
 
     /// @notice getting total deposit for the month including pet
-    uint256 _depositAmountIncludingPET = _getTotalDepositedIncludingPET(_amount, _monthlyCommitmentAmount);
+    uint256 _depositAmountIncludingPET = _getTotalDepositedIncludingPET(
+      _amount,
+      _monthlyCommitmentAmount
+    );
 
     /// @dev starting with allocating power booster amount due to this deposit amount
     uint256 _benefitAllocation = _petAmount;
@@ -477,7 +505,9 @@ contract TimeAllyPET {
     while(_previousMonth > 0) {
       if(0 < _pet.monthlyDepositAmount[_previousMonth]
       && _pet.monthlyDepositAmount[_previousMonth] < _pet.monthlyCommitmentAmount.div(2)) {
-        _updatedDepositAmount = _updatedDepositAmount.add(_pet.monthlyDepositAmount[_previousMonth]);
+        _updatedDepositAmount = _updatedDepositAmount.add(
+          _pet.monthlyDepositAmount[_previousMonth]
+        );
         _pet.monthlyDepositAmount[_previousMonth] = 0;
       }
       _previousMonth -= 1;
@@ -614,13 +644,14 @@ contract TimeAllyPET {
   /// @param _petId: id of PET in staker address portfolio
   /// @param _annuityMonthId: this is the month for which timestamp to find
   /// @return nominee allowed timestamp
-  function _getNomineeAllowedTimestamp(
+  function getNomineeAllowedTimestamp(
     address _stakerAddress,
     uint256 _petId,
     uint256 _annuityMonthId
-  ) private view returns (uint256) {
+  ) public view returns (uint256) {
     PET storage _pet = pets[_stakerAddress][_petId];
-    uint256 _allowedTimestamp = _pet.initTimestamp + (12 + _annuityMonthId - 1) * EARTH_SECONDS_IN_MONTH;
+    uint256 _allowedTimestamp = _pet.initTimestamp
+      + (12 + _annuityMonthId - 1) * EARTH_SECONDS_IN_MONTH;
 
     /// @notice if tranasction sender is not the staker, then more delay to _allowedTimestamp
     if(msg.sender != _stakerAddress) {
@@ -659,7 +690,11 @@ contract TimeAllyPET {
     );
 
     /// @notice calculating allowed timestamp
-    uint256 _allowedTimestamp = _getNomineeAllowedTimestamp(_stakerAddress, _petId, _endAnnuityMonthId);
+    uint256 _allowedTimestamp = getNomineeAllowedTimestamp(
+      _stakerAddress,
+      _petId,
+      _endAnnuityMonthId
+    );
 
     /// @notice enforcing withdrawls only after allowed timestamp
     require(
@@ -743,7 +778,10 @@ contract TimeAllyPET {
 
     /// @notice calculating total deposited by staker and pet in all 12 months
     for(uint256 _i = 1; _i <= 12; _i++) {
-      uint256 _depositAmountIncludingPET = _getTotalDepositedIncludingPET(_pet.monthlyDepositAmount[_i], _pet.monthlyCommitmentAmount);
+      uint256 _depositAmountIncludingPET = _getTotalDepositedIncludingPET(
+        _pet.monthlyDepositAmount[_i],
+        _pet.monthlyCommitmentAmount
+      );
 
       _totalDepositedIncludingPET = _totalDepositedIncludingPET.add(_depositAmountIncludingPET);
     }
@@ -781,7 +819,11 @@ contract TimeAllyPET {
     );
 
     /// @notice calculating allowed timestamp based on time and nominee
-    uint256 _allowedTimestamp = _getNomineeAllowedTimestamp(_stakerAddress, _petId, _powerBoosterId*5+1);
+    uint256 _allowedTimestamp = getNomineeAllowedTimestamp(
+      _stakerAddress,
+      _petId,
+      _powerBoosterId*5+1
+    );
 
     /// @notice enforcing withdrawl after _allowedTimestamp
     require(
@@ -904,6 +946,7 @@ contract TimeAllyPET {
     emit NomineeUpdated(msg.sender, _petId, _nomineeAddress, _newNomineeStatus);
   }
 }
+
 
 /// @dev For interface requirement
 abstract contract ERC20 {

@@ -25,6 +25,7 @@ done
 done
 
 - check all token transfer non zero txs
+done
 
 - deposit carry forward
 done; to be tested
@@ -699,16 +700,16 @@ contract TimeAllyPET {
     if(_powerBoosterAmount > 0) {
       /// @notice sending the power booster amount to withdrawer (staker or nominee)
       token.transfer(msg.sender, _powerBoosterAmount);
-
-      /// @notice emitting an event
-      emit PowerBoosterWithdrawl(
-        _stakerAddress,
-        _petId,
-        _powerBoosterId,
-        _powerBoosterAmount,
-        msg.sender
-      );
     }
+
+    /// @notice emitting an event
+    emit PowerBoosterWithdrawl(
+      _stakerAddress,
+      _petId,
+      _powerBoosterId,
+      _powerBoosterAmount,
+      msg.sender
+    );
   }
 
   /// @notice this function is used to view nomination

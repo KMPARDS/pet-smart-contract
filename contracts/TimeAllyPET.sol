@@ -1,10 +1,8 @@
-pragma solidity ^0.6.0;
+pragma solidity 0.6.1;
 
 import './SafeMath.sol';
 
 /*
-
-
 - remove mou while deploying
 
 - seperate every public non view function with memory logic in first part and storage logic in second part
@@ -196,8 +194,9 @@ contract TimeAllyPET {
     uint256 indexed _petId,
     uint256 _monthId,
     uint256 _depositAmount,
-    uint256 _benefitAllocated,
-    address _depositedBy
+    // uint256 _benefitAllocated,
+    address _depositedBy,
+    bool _usingPrepaidES
   );
 
   /// @notice event schema for monitoring pet annuity withdrawn by stakers
@@ -302,7 +301,9 @@ contract TimeAllyPET {
     }
   }
 
-  /// in new PET, it is better to also take a first deposit
+  /// @notice this function is used by anyone to create a new PET
+  /// @param _planId: id of PET in staker portfolio
+  /// @param _monthlyCommitmentAmount: PET monthly commitment amount in exaES
   function newPET(
     uint256 _planId,
     uint256 _monthlyCommitmentAmount
@@ -449,7 +450,7 @@ contract TimeAllyPET {
     uint256 _petId,
     uint256 _depositAmount,
     bool _usePrepaidES
-  ) public {
+  ) public meOrNominee(_stakerAddress, _petId) {
     /// @notice check if non zero deposit
     require(_depositAmount > 0, 'deposit amount should be non zero');
 
@@ -510,8 +511,9 @@ contract TimeAllyPET {
       _petId,
       _depositMonth,
       _depositAmount,
-      _extraBenefitAllocation,
-      msg.sender
+      // _extraBenefitAllocation,
+      msg.sender,
+      _usePrepaidES
     );
   }
 
@@ -520,28 +522,41 @@ contract TimeAllyPET {
   /// @param _stakerAddress: address of staker who has a PET
   /// @param _petId: id of PET in staker address portfolio
   /// @param _totalDepositAmount: total amount to deposit for 12 months
+  /// @param _frequencyMode: can be 3, 6 or 12
   /// @param _usePrepaidES: should prepaidES be used
-  function makeLumSumDeposit(
+  // deposit frequency mode
+  function makeFrequencyModeDeposit(
     address _stakerAddress,
     uint256 _petId,
     uint256 _totalDepositAmount,
+    uint256 _frequencyMode,
     bool _usePrepaidES
   ) public {
+    uint256 _fees;
+    /// @dev using ether because ES also has 18 decimals like ETH
+    if(_frequencyMode == 3) _fees = _totalDepositAmount.mul(1).div(100);
+    else if(_frequencyMode == 6) _fees = _totalDepositAmount.mul(2).div(100);
+    else if(_frequencyMode == 12) _fees = _totalDepositAmount.mul(3).div(100);
+    else require(false, 'unsupported frequency');
+
     /// @notice check if non zero deposit
     require(_totalDepositAmount > 0, 'deposit amount should be non zero');
 
     /// @notice get the reference of staker's PET
     PET storage _pet = pets[_stakerAddress][_petId];
 
-    /// @notice enforce only fresh pets
-    require(_pet.monthlyDepositAmount[1] == 0, 'allowed only in fresh pets');
-
     /// @notice calculate deposit month based on time and enforce first month
     uint256 _depositMonth = getDepositMonth(_stakerAddress, _petId);
-    require(_depositMonth == 1, 'allowed only in first month');
+    // require(_depositMonth == 1, 'allowed only in first month');
+
+    uint256 _uptoMonth = _depositMonth.add(_frequencyMode).sub(1);
+    require(_uptoMonth <= 12, 'cannot deposit after accumulation period');
+
+    /// @notice enforce only fresh pets
+    require(_pet.monthlyDepositAmount[_depositMonth] == 0, 'allowed only in fresh month deposit');
 
     /// @notice calculate monthly deposit amount
-    uint256 _monthlyDepositAmount = _totalDepositAmount.div(12);
+    uint256 _monthlyDepositAmount = _totalDepositAmount.div(_frequencyMode);
 
     /// @notice check if single monthly deposit amount is at least commitment
     require(
@@ -558,16 +573,19 @@ contract TimeAllyPET {
 
     if(_usePrepaidES) {
       /// @notice subtracting prepaidES from staker
-      prepaidES[msg.sender] = prepaidES[msg.sender].sub(_totalDepositAmount);
+      prepaidES[msg.sender] = prepaidES[msg.sender].sub(_totalDepositAmount.add(_fees));
     } else {
       /// @notice transfering staker tokens to PET contract
-      token.transferFrom(msg.sender, address(this), _totalDepositAmount);
+      token.transferFrom(msg.sender, address(this), _totalDepositAmount.add(_fees));
     }
 
-    /// @notice pull funds from funds bucket
-    token.transferFrom(fundsBucket, address(this), _benefitAllocationForSingleMonth.mul(12));
+    prepaidES[deployer] = prepaidES[deployer].add(_fees);
+    // token.transfer(deployer, _fees);
 
-    for(uint256 _monthId = 1; _monthId <= 12; _monthId++) {
+    /// @notice pull funds from funds bucket
+    token.transferFrom(fundsBucket, address(this), _benefitAllocationForSingleMonth.mul(_frequencyMode));
+
+    for(uint256 _monthId = _depositMonth; _monthId <= _uptoMonth; _monthId++) {
       /// @notice mark deposits in all the months
       _pet.monthlyDepositAmount[_monthId] = _monthlyDepositAmount;
 
@@ -577,8 +595,9 @@ contract TimeAllyPET {
         _petId,
         _monthId,
         _monthlyDepositAmount,
-        _benefitAllocationForSingleMonth,
-        msg.sender
+        // _benefitAllocationForSingleMonth,
+        msg.sender,
+        _usePrepaidES
       );
     }
   }
